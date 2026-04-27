@@ -1,0 +1,62 @@
+[project]
+name = "karaoke-jp"
+version = "0.0.1"
+description = "JOYSOUND-style Japanese karaoke video generator (personal use)"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+authors = [{ name = "Lanternko" }]
+license = { text = "MIT" }
+
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "yt-dlp>=2025.1",
+    "soundfile>=0.12",
+    "numpy>=1.26,<3.0",
+]
+
+[project.optional-dependencies]
+# Per-stage extras. Install only what you need on a given machine,
+# since some combinations conflict (e.g. RoFormer torch vs WhisperX torch).
+separation = [
+    "melband-roformer-infer>=0.1.1",
+]
+pitch = [
+    # Filled in at M2 (RMVPE + SOME)
+]
+lyrics = [
+    # Filled in at M3 (mlx-whisper on Mac, faster-whisper on Linux,
+    # whisperx for wav2vec2 alignment, sofa, fugashi, unidic-lite, yomikata)
+]
+render = [
+    "Pillow>=10.0",
+    "ffmpeg-python>=0.2.0",
+    # MID2BAR-Player fork dropped into third_party/ at M4
+]
+batch = [
+    "snakemake>=8.0",
+]
+dev = [
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+karaoke-jp = "karaoke_jp.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/karaoke_jp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]

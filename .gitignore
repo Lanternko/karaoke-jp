@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# uv
+uv.lock
+
+# Project artifacts
+songs/*/source.wav
+songs/*/source.mp3
+songs/*/source.m4a
+outputs/
+*.log
+
+# Large media we don't want in git
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.mp4
+*.mkv
+*.mid
+*.midi
+
+# Background images may stay (small)
+!songs/*/background.png
+
+# Allow lyrics + override JSON to be tracked
+!songs/*/lyrics.txt
+!overrides/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Snakemake
+.snakemake/
+
+# Third-party repos: cloned by setup script, not vendored.
+third_party/*
+!third_party/.gitkeep
+!third_party/README.md

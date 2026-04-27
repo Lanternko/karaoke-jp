@@ -1,0 +1,7 @@
+name: karaoke-jp-pitch
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  # Filled in at M2 (RMVPE, SOME).
