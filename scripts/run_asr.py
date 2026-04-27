@@ -47,10 +47,15 @@ def main(
 
     initial_prompt = None
     if lyrics_path:
-        # ~200 chars stays inside Whisper's 224-token prompt window for JP.
+        # Whisper's prompt budget is 224 tokens, not 224 chars; the SOT BPE
+        # for Japanese typically packs ~1.0–1.3 chars per token (mixed
+        # kanji+kana). 150 chars is a conservative upper bound that keeps us
+        # under 224 tokens for any realistic J-pop verse. We deliberately
+        # take the HEAD (verse 1) so Whisper biases toward the song opener,
+        # which is the segment most prone to being missed (quiet entries).
         raw = Path(lyrics_path).read_text(encoding="utf-8")
         compact = "".join(raw.split())  # drop newlines and 全角空白
-        initial_prompt = compact[:200]
+        initial_prompt = compact[:150]
         print(f"using initial_prompt ({len(initial_prompt)} chars)", flush=True)
 
     print(f"loading {model} ({compute_type}) on {device}...", flush=True)

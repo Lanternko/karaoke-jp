@@ -42,8 +42,10 @@ rule separate:
         instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
     params:
         out_dir=lambda wc: str(OUT_DIR / wc.song),
+    # `:q` shell-quotes path placeholders so song ids / source paths
+    # containing spaces (or anything else the shell might split on) survive.
     shell:
-        "karaoke-jp separate {input.audio} -o {params.out_dir}"
+        "karaoke-jp separate {input.audio:q} -o {params.out_dir:q}"
 
 
 rule melody:
@@ -53,4 +55,4 @@ rule melody:
     output:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
     shell:
-        "karaoke-jp melody {input.vocals} -o {output.midi}"
+        "karaoke-jp melody {input.vocals:q} -o {output.midi:q}"

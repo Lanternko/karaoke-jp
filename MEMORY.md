@@ -68,11 +68,28 @@
 - **MIDI 要插 page-boundary markers**（他們 marker editor 是 Windows-only GUI）— 用 mido 加 meta-event 自動化
 - 我們的 `aligned.json` → MID2BAR LRC：~60 行 Python（一行 walk tokens，帶 ruby 的出 `@RubyN`，body emit char-level tags）
 
-### M4 翻案教訓（記下來避免重蹈覆轍）
-- 中間 sub-agent survey MID2BAR-Player 後判定「實時 Pygame 視窗 + ffmpeg 螢幕錄製」推薦自寫 300 行
-- Kojie 提供之前研究文章說「ffmpeg-encodes to MP4 from melody MIDI + ruby-LRC + audio」
-- 衝突點透過直接讀 `framerecorder.py` 110 行解決：sub-agent 看到 Pygame 就誤判，沒讀進 push_frame 的實作
-- **教訓**：fork-vs-build 這種方向性決策一定要直接讀 code 驗證關鍵假設，不能只 WebFetch README + 看 stars。Sub-agent 對「結構」的判斷可信，對「架構意圖」的判斷不可信
+### Fork-vs-build 決策 checklist（M4 翻案後沉澱）
+**何時觸發**：要決定 「fork 一個外部 repo + 自動化上游」 vs 「自己寫一個 ~300 行的版本」。
+
+**Sub-agent / WebFetch 的可信度邊界**：
+- ✅ 可信：repo 健康度（star / commit cadence / open issues / license / 上次 release 時間）
+- ✅ 可信：README / 範例展示的功能列表（pitch bar / wipe / ruby 等是否存在）
+- ✅ 可信：deps 清單、檔案結構、line counts
+- ❌ 不可信：「export path 是 X」「rendering 模式是 Y」這種**架構意圖**判斷
+- ❌ 不可信：根據檔名 / class 名 / module 名「猜」實作（看到 Pygame 就猜螢幕錄製，看到 fairseq import 就猜實際用到）
+
+**強制驗證項目**（fork-vs-build 決策前必跑，不能省）：
+1. **直接讀關鍵 code 路徑**，不能只看 README。MID2BAR 的 `framerecorder.py` 只有 110 行，5 分鐘讀完
+2. **找實際 export 函式**，看它怎麼產生 deliverable（offline encoder vs real-time capture vs other）
+3. **驗證可 headless**（如果目標是 batch / CI）— 找 `set_mode` / display init / DISPLAY 依賴
+4. **找入口點**（CLI / main / API class），確認是不是要包一層
+5. **驗證 input format spec**，不能假設是 standard format（MID2BAR 用 `[mm:ss:cs]` colon，不是 standard `[mm:ss.ms]` dot；ruby 是 `@RubyN=` header 不是 inline `(かな)`）
+
+**M4 具體 incident**：
+- Sub-agent survey 後判定「實時 Pygame 視窗 + ffmpeg 螢幕錄製」推薦自寫
+- Kojie 提供 deep research 文章說「ffmpeg-encodes to MP4 from MIDI + LRC + audio」
+- 衝突透過直接讀 `framerecorder.py` 110 行解決：實際是 `pygame.image.tostring(surface, "RGB")` → ffmpeg stdin，frame_idx 驅動的 deterministic offline pipe
+- 結論：fork plan stays（spec 原計畫 + 文章對 + 自己讀 code 確認）
 
 ### 批次：Snakemake
 - 50 首 fan-out 一行 wildcard

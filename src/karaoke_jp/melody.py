@@ -62,11 +62,19 @@ def extract_midi(
             f"SOME checkpoint not found at {some_ckpt}. Run the M2 setup."
         )
 
-    env = os.environ.copy()
-    if cuda_device is None:
-        env["CUDA_VISIBLE_DEVICES"] = ""
-    else:
-        env["CUDA_VISIBLE_DEVICES"] = str(cuda_device)
+    # Build a *minimal* env for the child Python so the parent venv's
+    # PYTHONPATH / PYTHONHOME / VIRTUAL_ENV / SYS.PATH overrides do not leak
+    # in and weaken the dedicated-venv isolation. Pass through only what the
+    # subprocess legitimately needs (PATH for ffmpeg/ffprobe, locale for
+    # filename handling, HOME for pooch / huggingface caches, LD_LIBRARY_PATH
+    # for CUDA shims).
+    parent = os.environ
+    passthrough = (
+        "PATH", "HOME", "USER", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE",
+        "LD_LIBRARY_PATH", "CUDA_HOME", "CUDA_PATH",
+    )
+    env = {k: parent[k] for k in passthrough if k in parent}
+    env["CUDA_VISIBLE_DEVICES"] = "" if cuda_device is None else str(cuda_device)
 
     cmd = [
         str(some_python),
