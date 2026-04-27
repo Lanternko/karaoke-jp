@@ -16,7 +16,7 @@ The wrapper handles all three.
 from __future__ import annotations
 
 import argparse
-import shutil
+import tempfile
 from pathlib import Path
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "karaoke-jp" / "melband-roformer"
@@ -69,28 +69,23 @@ def separate_file(
     cache_dir = cache_dir or DEFAULT_CACHE_DIR
     config_path, ckpt_path = _ensure_model(model_name, cache_dir)
 
-    # The library only takes a folder. Stage the input into a temp dir so we
-    # don't accidentally pick up siblings.
-    stage_dir = out_dir / ".staging"
-    if stage_dir.exists():
-        shutil.rmtree(stage_dir)
-    stage_dir.mkdir(parents=True)
-    staged_input = stage_dir / input_path.name
-    staged_input.symlink_to(input_path)
+    # The library only takes a folder. Stage into a unique temp dir per call
+    # so retries / parallel jobs / leftover state can't collide.
+    with tempfile.TemporaryDirectory(prefix="karaoke-jp-separate-") as stage_str:
+        stage_dir = Path(stage_str)
+        staged_input = stage_dir / input_path.name
+        staged_input.symlink_to(input_path)
 
-    args = argparse.Namespace(
-        model_type="mel_band_roformer",
-        config_path=config_path,
-        model_path=ckpt_path,
-        input_folder=stage_dir,
-        store_dir=out_dir,
-        device=device,
-        device_ids=None,
-    )
-    try:
+        args = argparse.Namespace(
+            model_type="mel_band_roformer",
+            config_path=config_path,
+            model_path=ckpt_path,
+            input_folder=stage_dir,
+            store_dir=out_dir,
+            device=device,
+            device_ids=None,
+        )
         proc_folder(args)
-    finally:
-        shutil.rmtree(stage_dir, ignore_errors=True)
 
     stem = input_path.stem
     raw_vocals = out_dir / f"{stem}_vocals.wav"

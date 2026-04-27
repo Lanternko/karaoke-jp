@@ -18,12 +18,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import click
 
 from karaoke_jp.align import (
-    assign_timestamps,
+    asr_chars_to_kana_units,
+    assign_kana_aware_timestamps,
     build_aligned_lines,
     emit_enhanced_lrc,
     load_asr_chars,
     load_lyrics_chars,
-    needleman_wunsch,
+    needleman_wunsch_kana,
+    text_to_kana_units,
 )
 
 
@@ -33,30 +35,40 @@ from karaoke_jp.align import (
 @click.option("--aligned-out", type=click.Path(dir_okay=False), required=True)
 @click.option("--lrc-out", type=click.Path(dir_okay=False), required=True)
 def main(asr_path: str, tokens_path: str, aligned_out: str, lrc_out: str) -> None:
+    import fugashi
+
     asr_chars = load_asr_chars(Path(asr_path))
     lyrics_chars, lyrics_lines = load_lyrics_chars(Path(tokens_path))
 
-    print(f"[align] {len(asr_chars)} ASR chars vs {len(lyrics_chars)} lyrics chars")
+    tagger = fugashi.Tagger()
+    asr_kanas = asr_chars_to_kana_units(asr_chars, tagger)
+    lyr_text = "".join(lc.char for lc in lyrics_chars)
+    lyr_kanas = text_to_kana_units(lyr_text, tagger)
 
-    pairs = needleman_wunsch(asr_chars, lyrics_chars)
+    print(
+        f"[align] streams: {len(asr_chars)} ASR chars -> {len(asr_kanas)} kana, "
+        f"{len(lyrics_chars)} lyrics chars -> {len(lyr_kanas)} kana"
+    )
+
+    pairs = needleman_wunsch_kana(asr_kanas, lyr_kanas)
     matches = sum(
         1
         for ai, li in pairs
-        if ai is not None and li is not None and asr_chars[ai].char == lyrics_chars[li].char
+        if ai is not None and li is not None and asr_kanas[ai].kana == lyr_kanas[li].kana
     )
     subs = sum(
         1
         for ai, li in pairs
-        if ai is not None and li is not None and asr_chars[ai].char != lyrics_chars[li].char
+        if ai is not None and li is not None and asr_kanas[ai].kana != lyr_kanas[li].kana
     )
     asr_dels = sum(1 for ai, li in pairs if li is None)
     lyr_inserts = sum(1 for ai, li in pairs if ai is None)
     print(
-        f"[align] alignment: {matches} matches, {subs} substitutions, "
-        f"{asr_dels} ASR-only chars dropped, {lyr_inserts} lyrics chars without ASR support"
+        f"[align] kana alignment: {matches} matches ({matches / max(len(lyr_kanas), 1):.0%}), "
+        f"{subs} substitutions, {asr_dels} ASR-only kana, {lyr_inserts} lyrics-only kana"
     )
 
-    timestamps = assign_timestamps(asr_chars, lyrics_chars, pairs)
+    timestamps = assign_kana_aware_timestamps(lyrics_chars, asr_kanas, lyr_kanas, pairs)
     aligned = build_aligned_lines(lyrics_lines, lyrics_chars, timestamps)
 
     Path(aligned_out).parent.mkdir(parents=True, exist_ok=True)

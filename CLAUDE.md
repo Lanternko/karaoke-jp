@@ -40,6 +40,19 @@
 - 中間檔（vocals.wav、melody.mid、ruby.lrc）每階段都存，cache 友善
 - Snakemake `--rerun-triggers params input code` 開著，改 code 不會重跑分離（注意：Snakemake 9 要 space-separated，不是 comma）
 
+## 環境隔離 — single source of truth
+**「主 venv + per-stage subprocess venv」是唯一正典**。三個 venv：
+
+| venv | 負責 | 為何分開 |
+|---|---|---|
+| `~/venvs/karaoke-jp/` | M1 separate, M4 render, click CLI | 主環境，torch 2.11+cu13 |
+| `~/venvs/karaoke-jp-melody/` | M2 SOME inference | librosa<0.10 + numpy<2 跟主 venv 撞 |
+| `~/venvs/karaoke-jp-lyrics/` | M3 ASR + tokenize + align | faster-whisper 要 CUDA12 cuBLAS shim |
+
+**已撤掉** `envs/*.yaml`（給 Snakemake `--use-conda` 用的 spec），原因：never wired to actual rules，三套 isolation story 並存只會 drift。M6 真要批次跑時可以再加回去（Snakemake conda envs 替 venv），但現在先收斂。
+
+`melody.py` 的 subprocess `env=` 只 passthrough whitelist 的變數（PATH / HOME / LANG / LD_LIBRARY_PATH / CUDA_*），**不抄整個 `os.environ`**，避免父 venv 的 PYTHONPATH/PYTHONHOME/VIRTUAL_ENV 漏進子環境。M3/M4 subprocess 走同 pattern。
+
 ## 跨專案 context
 - 使用者 的 Mac：Apple Silicon
 - SSH GPU 機：MeanAudio 訓練那台（具體機器名要實測時確認）
