@@ -61,7 +61,7 @@ LYRICS_LD = ":".join(
 
 
 rule separate:
-    """M1: Mel-Band-RoFormer vocal separation."""
+    """M1: Mel-Band-RoFormer vocal separation (Kim FT2 Bleedless)."""
     input:
         audio=lambda wc: source_for(wc.song),
     output:
@@ -73,6 +73,7 @@ rule separate:
     # containing spaces (or anything else the shell might split on) survive.
     shell:
         f"{KARAOKE_BIN} separate {{input.audio:q}} -o {{params.out_dir:q}}"
+        f" --model melband-roformer-kimmel-ft2-bleedless"
 
 
 rule melody:
@@ -103,7 +104,7 @@ rule asr:
     output:
         asr=str(OUT_DIR / "{song}" / "asr.json"),
     shell:
-        f"LD_LIBRARY_PATH={LYRICS_LD}:$LD_LIBRARY_PATH "
+        f"LD_LIBRARY_PATH={LYRICS_LD}:${{{{LD_LIBRARY_PATH:-}}}} "
         f"{LYRICS_PY} scripts/run_asr.py {{input.vocals:q}} -o {{output.asr:q}} "
         f"--lyrics {{input.lyrics:q}}"
 
