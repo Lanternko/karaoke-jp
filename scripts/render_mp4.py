@@ -153,6 +153,21 @@ def main(
     # scripts/ dir.
     sys.argv[0] = str(MID2BAR_DIR / "main.py")
 
+    # MID2BAR caches per-line text PNGs under
+    # `./lyrics_images/<lrc_basename>/` plus `./lyrics_images/<lrc_basename>.json`.
+    # If two songs share an LRC basename (e.g. both produce `karaoke.lrc`)
+    # the cache from song A is silently reused for song B. Wipe the cache
+    # tree for our lrc basename before each render so the renderer
+    # regenerates from the actual LRC content.
+    import shutil
+    lrc_stem = Path(lrc_abs).stem
+    cache_dir = Path("lyrics_images") / lrc_stem
+    cache_json = Path("lyrics_images") / f"{lrc_stem}.json"
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir)
+    if cache_json.exists():
+        cache_json.unlink()
+
     _silence_messagebox()
     _stub_audio_modules()
     _hook_recorder_termination()
