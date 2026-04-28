@@ -1,7 +1,7 @@
 # karaoke-jp — 日式卡拉 OK 影片自動生成器 規格書
 
-**版本**：v1.1（2026-04-28，M0-M4 wired）
-**狀態**：M0-M4 端到端跑通（兩首歌驗證），polish 階段（M5/M6/M7）pending
+**版本**：v1.2（2026-04-29，M0-M5 wired，三首歌驗證）
+**狀態**：M0-M5 端到端跑通（tuki-zero / bocchi-guitar / chidori 三首），polish 階段（M6/M7）pending
 
 ---
 
@@ -223,6 +223,10 @@ karaoke-jp/
 - openvpi/SOME v1.0.0-baseline，獨立 venv 避 librosa/numpy 衝突
 - 實測：4 分鐘 song GPU 8 秒，626 notes，piano roll 結構符合 J-pop
 - **發現**：me_infer.py 實際走 parselmouth，不是 RMVPE（config 是 stale）→ fairseq 不用裝
+- **Post-RMVPE 三段修正**（`src/karaoke_jp/melody.py`，套用順序）：
+  1. `fix_phrase_octave(max_passes=5)`：duration-weighted median anchor；iterative 抓多層 subharmonic
+  2. `fix_octave_errors`：local window(±5) median 抓孤立 sub-harmonic outlier
+  3. `fill_held_note_gaps(gap_threshold=8.0)`：填 RMVPE dropout on 超長持音（≥8s 同音高 gap）
 
 **M3 — 歌詞 ruby-LRC** ✅ v1 done（mora-level → v2 留 SOFA）
 - ASR：faster-whisper large-v3 + lyrics initial_prompt 偏置開頭
@@ -237,9 +241,11 @@ karaoke-jp/
 - MIDI：mido 注入 page-boundary markers + default 4/4 time_signature
 - BG：optional, auto-detect songs/<song>/background.{mp4,png,...}, 一律 ffmpeg normalize 成 h264 1080p
 
-**M5 — 人聲音量調混** pending（半天估算）
-- ffmpeg amix 多版輸出（30% / 50% / 100% / off）
-- Snakefile rule，跟 M4 平行（不卡 render）
+**M5 — 人聲音量調混** ✅ done（20% vocal mix 已實裝）
+- `src/karaoke_jp/mix.py` `mix_vocals(instrumental, vocals, out, vocal_ratio=0.20)`
+- ffmpeg amix filter：`[bg]volume=1.0` + `[voc]volume=0.20`（`normalize=0`）
+- Snakefile `mix` rule → `outputs/<song>/mixed.wav`；`render` 改吃 `mixed.wav`
+- TODO：多音量版（30% / 50% / 100% / off）輸出留 M5 polish
 
 **M6 — Snakemake 批次化** partially done
 - 已 wire：DAG 8 個 rule，single song 跑通

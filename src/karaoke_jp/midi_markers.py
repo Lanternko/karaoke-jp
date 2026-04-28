@@ -25,12 +25,27 @@ def _seconds_to_ticks(seconds: float, ticks_per_beat: int, tempo_us: int) -> int
     return int(round(beats * ticks_per_beat))
 
 
+def _midi_duration_seconds(mid: mido.MidiFile, tempo_us: int) -> float:
+    """Return the wall-clock end time of the last note in *mid* (seconds)."""
+    last = 0.0
+    for track in mid.tracks:
+        abs_ticks = 0
+        for msg in track:
+            abs_ticks += msg.time
+            if msg.type in ("note_on", "note_off"):
+                t = abs_ticks * tempo_us / (mid.ticks_per_beat * 1_000_000)
+                if t > last:
+                    last = t
+    return last
+
+
 def inject_line_markers(
     midi_path: str | Path,
     aligned_path: str | Path,
     out_path: str | Path,
     *,
     block_size: int = 2,
+    dummy_interval: float = 4.0,
 ) -> int:
     """Add one ``marker`` meta-event per lyric block at its start time.
 
@@ -76,9 +91,30 @@ def inject_line_markers(
 
     lines = [line for line in aligned if line["tokens"]]
     if not lines:
-        # No lines to mark; just copy the file through.
+        # No lyrics — inject dummy markers every dummy_interval seconds so
+        # MID2BAR's page-advance logic still fires and pitch bars are visible.
+        duration = _midi_duration_seconds(mid, tempo_us)
+        page_starts: list[tuple[float, str]] = []
+        t = 0.0
+        i = 1
+        while t < duration:
+            page_starts.append((t, f"P{i:02d}"))
+            t += dummy_interval
+            i += 1
+        page_starts.append((duration + 1.0, "END"))
+
+        marker_track = mido.MidiTrack()
+        prev_tick = 0
+        for t_s, label in page_starts:
+            abs_tick = _seconds_to_ticks(t_s, mid.ticks_per_beat, tempo_us)
+            delta = max(abs_tick - prev_tick, 0)
+            marker_track.append(mido.MetaMessage("marker", text=label, time=delta))
+            prev_tick = abs_tick
+        marker_track.append(mido.MetaMessage("end_of_track", time=0))
+        mid.tracks.append(marker_track)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         mid.save(out_path)
-        return 0
+        return len(page_starts) - 1
 
     blocks = [lines[i:i + block_size] for i in range(0, len(lines), block_size)]
     page_starts: list[tuple[float, str]] = []

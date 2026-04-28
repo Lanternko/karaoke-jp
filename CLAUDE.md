@@ -4,16 +4,17 @@
 日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**使用者 自用練唱**，不上傳。
 
 ## 狀態
-**M0-M4 全 wire（2026-04-28）**，兩首歌端到端跑通：
+**M0-M4 全 wire（2026-04-28）**，三首歌端到端跑通：
 
 | song | bg 來源 | mp4 路徑 |
 |---|---|---|
 | tuki-zero (`零-zero-`) | YT Official Audio = album art | `outputs/tuki-zero/karaoke.mp4` |
 | bocchi-guitar (`ギターと孤独と蒼い惑星`) | YT Lyric Video MV（含燒入字，user accepted） | `outputs/bocchi-guitar/karaoke.mp4` |
+| chidori (`ヨルシカ — 千鳥`) | 靜態 bg（Lyric Video 有燒入字故不用） | `outputs/chidori/karaoke.mp4` |
 
-兩首都 1080p60，duration 跟原曲對齊到 sample，pitch bars + per-char wipe + furigana 全部達成。
+三首都 1080p60，duration 跟原曲對齊到 sample，pitch bars + per-char wipe + furigana 全部達成。
 
-下一步：polish（M5 amix 多音量版 / M6 Snakemake 批次 / M7 Yomikata + override JSON）。
+下一步：M6 Snakemake 批次 / M7 Yomikata + override JSON（M5 已完成 20% vocal mix，可選多音量版）。
 
 ## 三件套
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
@@ -39,6 +40,7 @@
 - **不要兩首歌都用 `karaoke.lrc` 當輸出名 — MID2BAR 用 `lyrics_images/<lrc_basename>/` 當 cache，會把 song A 的歌詞圖渲染到 song B 上。** `render_mp4.py` 已經在每次 render 前 wipe 該 cache dir，但若改 LRC 命名邏輯要記得重 walk 這條 cache invalidation。
 - **不要直接拿 yt-dlp 預設下的 mp4 當 MID2BAR 背景。** YouTube 預設給 AV1，OpenCV 沒軟解，會 silent black bg。`render_mp4.py` 一律 ffmpeg re-encode 成 h264 yuv420p；`download_song.py` 也偏好 `vcodec*=avc1` 720p 避開 AV1。
 - **「Lyric Video」型 YouTube 上傳（已燒入歌詞）不要當 karaoke bg**，會跟我們的歌詞層撞。`download_song.py --no-video` 跳過抓 video，user 自己提供靜態 bg。
+- **MID2BAR `BarCountEntry` / `AnimationEntry` 是 frozen dataclass，app.py 用 `["key"]` subscript 存取 → `TypeError: 'BarCountEntry' object is not subscriptable`，每 frame 都觸發，被 `draw()` 的 try/except 吞掉，導致 `draw_lyrics()` 永遠不執行，歌詞全黑。** `settings_schema.py` gitignored 不能直接改，修法是在 `render_mp4.py` import app 之前 monkey-patch `__getitem__` 到兩個 class：`_cls.__getitem__ = lambda self, key: getattr(self, key)`。任何新版 MID2BAR 如果歌詞突然消失，先查這條。
 
 ## 第一個 test case 怎麼選
 - **Vocaloid 純假名歌詞**最安全（沒 gikun，沒漢字異讀問題）
