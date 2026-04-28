@@ -109,7 +109,12 @@ rule asr:
 
 
 rule align:
-    """M3c: ASR + tokens -> aligned.json + ruby.lrc (kana-aware NW)."""
+    """M3c: ASR + tokens -> aligned.json + ruby.lrc (kana-aware NW).
+
+    aligned.json at this stage uses Whisper word-level timestamps.  The
+    following midi_timing rule replaces those with MIDI note onsets, which
+    are syllable-accurate for singing.
+    """
     input:
         asr=str(OUT_DIR / "{song}" / "asr.json"),
         tokens=str(OUT_DIR / "{song}" / "tokens.json"),
@@ -122,15 +127,35 @@ rule align:
         f"--aligned-out {{output.aligned:q}} --lrc-out {{output.lrc:q}}"
 
 
+rule midi_timing:
+    """M3d: Replace Whisper char timing with MIDI note onsets.
+
+    SOME's melody.mid captures the actual note onset of every sung mora,
+    giving much tighter timing than Whisper word timestamps.  The result is
+    written to aligned_midi.json; downstream rules (export_lrc, midi_markers)
+    consume that file so the final karaoke.lrc has syllable-accurate wipe.
+    Lines with no notes in their Whisper window fall back to Whisper timing.
+    """
+    input:
+        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+        midi=str(OUT_DIR / "{song}" / "melody.mid"),
+    output:
+        aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.json"),
+    shell:
+        f"{MAIN_PY} scripts/midi_timing.py "
+        f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} "
+        f"--out {{output.aligned_midi:q}}"
+
+
 # M4 stages: lrc/marker prep run in the main venv (mido lives there); the
 # actual render runs in the dedicated MID2BAR venv (Pygame + opencv).
 # (MAIN_PY / RENDER_PY were defined alongside the other binaries above.)
 
 
 rule export_lrc:
-    """M4a: aligned.json -> MID2BAR-flavored .lrc (centiseconds + @RubyN=)."""
+    """M4a: aligned_midi.json -> MID2BAR-flavored .lrc (centiseconds + @RubyN=)."""
     input:
-        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+        aligned=str(OUT_DIR / "{song}" / "aligned_midi.json"),
     output:
         lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
     shell:
@@ -138,15 +163,34 @@ rule export_lrc:
 
 
 rule midi_markers:
-    """M4b: melody.mid + aligned.json -> melody_markers.mid (page boundaries)."""
+    """M4b: melody.mid + aligned_midi.json -> melody_markers.mid (page boundaries)."""
     input:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
-        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+        aligned=str(OUT_DIR / "{song}" / "aligned_midi.json"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
     shell:
         f"{MAIN_PY} scripts/add_midi_markers.py "
         f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} --out {{output.midi:q}}"
+
+
+rule mix:
+    """M5: Blend instrumental + vocals at 20 % vocal ratio.
+
+    Produces mixed.wav which is fed to the renderer so the guide vocal is
+    audible at low volume while the melody bar still shows the karaoke pitch.
+    Set VOCAL_RATIO=0 in the shell invocation to build a pure-instrumental
+    version instead.
+    """
+    input:
+        instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+    output:
+        mixed=str(OUT_DIR / "{song}" / "mixed.wav"),
+    shell:
+        f"{MAIN_PY} scripts/mix_audio.py "
+        f"--instrumental {{input.instrumental:q}} --vocals {{input.vocals:q}} "
+        f"--out {{output.mixed:q}} --vocal-ratio 0.20"
 
 
 def _background_arg(wc):
@@ -166,14 +210,15 @@ def _background_arg(wc):
 
 
 rule render:
-    """M4c: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac).
+    """M4c/M5: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac).
 
+    Uses mixed.wav (instrumental + 20 % guide vocal) as the audio track.
     Auto-detects ``songs/<song>/background.{mp4,webm,png,jpg,jpeg}`` and
     feeds it as the rendered backdrop; if absent, the bundled MID2BAR blue
     gradient is used.
     """
     input:
-        instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
+        audio=str(OUT_DIR / "{song}" / "mixed.wav"),
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
         lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
     output:
@@ -183,5 +228,5 @@ rule render:
     shell:
         f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
         f"{RENDER_PY} scripts/render_mp4.py "
-        f"--audio {{input.instrumental:q}} --midi {{input.midi:q}} "
+        f"--audio {{input.audio:q}} --midi {{input.midi:q}} "
         f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} {{params.bg}}"

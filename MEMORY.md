@@ -14,19 +14,48 @@
 - MIT license（程式碼）；weight 商用授權不乾淨但**自用無影響**
 - 來源：ByteDance BS-RoFormer 論文 → KJ 訓練 → openmirlab Eric 老師學生包成 wrapper（2025/11 開 repo）
 
-### Pitch + Note：RMVPE → SOME
-- RMVPE 2023 出，**2026 仍是 vocal pitch SOTA**（96.0% on MIR-1K，超 SwiftF0 的 95.0%）
-- SOME（openvpi）原本宣稱 RMVPE backbone，**但 v1.0.0-baseline checkpoint 實測：me_infer.py 的 RMVPE 分支被註解掉**，inference 時是 `get_pitch_parselmouth`（praat-parselmouth）抽 f0；`modules.rmvpe` 只 import `MelSpectrogram` 工具類別。config 寫 `pe: rmvpe` 是 stale 設定。
-- 同樣 config 寫 `units_encoder_ckpt: pretrained/contentvec/...`，但實際 `units_encoder: mel` 走 mel-spec → **fairseq / ContentVec checkpoint 都不用裝**
-- 結論：minimal install runtime 只需 torch + torchaudio + librosa<0.10 + numpy<1 + parselmouth + lightning + mido + click + matplotlib，沒有 fairseq 折磨
-- **SOME 直接輸出 onset/offset，不用另跑 madmom**
-- SOME 輸出非整數 MIDI（實測 v1.0.0-baseline 還是整數 0-127，非整數 MIDI 是 GAME / 連續模型才有），保留浮點可畫 vibrato 那條 plan 要等之後升級
-- v1.0.0-baseline zip 名字 `0119_continuous128_5spk.zip` 解出來資料夾叫 `0119_continuous256_5spk/`（128 vs 256 不一致，是 release 命名 typo）
-- ckpt 檔名是 `model_ckpt_steps_100000_simplified.ckpt`，配套 `config.yaml` 同層
-- SOME weight CC-BY-NC-SA 4.0 → 自用 OK
-- SOME 作者已釋出 GAME（successor），值得追蹤但先用 SOME
+### Pitch + Note：RMVPE → SOME → BasicPitch（待評估）
 
-實測 RTF：8 秒跑完 4 分鐘 vocals.wav（RTX 5090，CUDA 13），626 notes，pitch range MIDI 49-79（C#3-G5，tuki. 17 歲女歌手合理），piano roll 結構符合 J-pop verse-chorus 結構。
+#### SOME v1.0.0-baseline 完整解剖（2026-04-28 讀 code 確認）
+- `me_infer.py` 的 f0_algo 整個 block 被 comment 掉，active code 是 `pitch = torch.zeros(...)`
+- **更嚴重**：`modules/conform/Gconform.py` 的 `forward(self, x, pitch, mask)` 接受 pitch 但 **body 完全不用它**（`x1=x.clone()`，pitch 從未出現在計算裡）
+- 結論：**SOME v1.0.0-baseline 不管輸入什麼 f0（RMVPE / parselmouth / zeros），output 完全一樣** — 驗證方法：`torch.zeros` 和 RMVPE 跑出來的 626 notes / 所有 onset / 所有 pitch 逐位完全相同
+- config 寫 `pe: rmvpe`, `pe_ckpt: pretrained/rmvpe/model.pt` 是 stale，訓練時可能有 f0 conditioning 但 simplified checkpoint 把這條路關掉了
+- 同樣 config 寫 `units_encoder_ckpt: pretrained/contentvec/...`，但實際 `units_encoder: mel` 走 mel-spec → **fairseq / ContentVec checkpoint 都不用裝**
+- 結論：minimal install 只需 torch + torchaudio + librosa<0.10 + numpy<1 + parselmouth + lightning + mido + click + matplotlib，parselmouth 甚至也不需要
+- **SOME 直接輸出 onset/offset，不用另跑 madmom**
+- **SOME 輸出整數 MIDI 0-127**（非整數 MIDI 是 GAME / 連續模型才有）
+- SOME 訓練資料全是中文歌（`test_prefixes` 裡 JuanZhuLian, GuanShanJiu 等），未必能泛化到日文 J-pop
+- SOME weight CC-BY-NC-SA 4.0 → 自用 OK
+- **RMVPE checkpoint 已下載**（352 MB）→ `third_party/SOME/pretrained/rmvpe/model.pt`，但對 v1.0.0-baseline 無效
+- SOME 作者已釋出 GAME（successor），可能修復 f0 conditioning，**待評估**
+
+#### 實測 RTF
+8 秒跑完 4 分鐘 vocals.wav（RTX 5090，CUDA 13），626 notes，pitch range MIDI 49-79（C#3-G5，tuki. 17 歲女歌手合理），piano roll 結構符合 J-pop verse-chorus 結構。
+
+#### 音階不準的根因 & 下一步
+- SOME 的 pitch accuracy 受限於 mel-spec 特徵 + 中文訓練資料的泛化能力，不是 f0 問題
+- 替代方案（優先評估）：**BasicPitch（Spotify）** — 專門 audio-to-MIDI，訓練資料多元，`pip install basic-pitch` 一行裝
+- 替代方案（次選）：GAME checkpoint（SOME 後繼），`openvpi/GAME` — 可能有更好的泛化
+- 手動 MIDI 是 ceiling（saund-box 參考影片做法），但 4 月發行的新歌找不到現成 MIDI
+
+### 歌詞 timing：MIDI note onset（2026-04-28 實裝）
+- **根因**：Whisper word-level timestamp 對唱歌不準；同一 token 內多字全部同一時間戳 → 畫面多字同時出現然後跳
+- **修法**：`scripts/midi_timing.py` — 用 MIDI note onset 替換 Whisper char-level timing
+  - 讀 melody.mid → 提取 (onset, offset, pitch) 清單
+  - 對每一行，以 Whisper line-level 時間窗（±0.4s 容差）找該行的 notes
+  - Greedy monotone 匹配：每個 char 分配一個 note，onset 為 char_start，next note onset 為 char_end
+  - 626 notes / 538 chars → 43 行全部找到 notes，0 行退回 Whisper
+- **效果**：`再` `会` 從 9.870/9.870 → 10.286/10.925（各自獨立），`変わっ` 三字從 14.190/14.190/14.190 → 14.025/14.210/14.664
+- **pipeline**：`align` → `aligned.json`（Whisper timing）→ `midi_timing` → `aligned_midi.json`（MIDI timing）→ `export_lrc` / `midi_markers`
+- SOFA（singing forced aligner）仍列為備選升級方案，但 MIDI-based timing 已足夠好
+
+### 20% 人聲 mix（2026-04-28 實裝）
+- `src/karaoke_jp/mix.py` 實作 `mix_vocals(instrumental, vocals, out, vocal_ratio=0.20)`
+- ffmpeg `amix` filter：`[bg]volume=1.0` + `[voc]volume=0.20` + `amix normalize=0` → `mixed.wav`
+- `scripts/mix_audio.py` 是 CLI wrapper；`karaoke-jp mix` 是頂層 click command
+- Snakefile `mix` rule → `outputs/<song>/mixed.wav`；`render` rule 改用 `mixed.wav` 而非 `instrumental.wav`
+- 測試：`mixed.wav` 40 MB，ffprobe duration 237s，無 error
 
 ### 歌詞辨識：mlx-whisper
 - WhisperX 在 Mac MPS **壞掉**（sparse_coo_tensor + repeat_interleave fail）
@@ -179,4 +208,11 @@
 
 - **Round 1**（initial M1-M3 commit, c019e67 → b2e1631）：5 fix（Snakefile `:q` quoting、kana-aware align refactor、subprocess env hygiene、tempfile staging、ASR comment honesty）+ 2 architectural（drop envs/*.yaml、refactor M4 lesson as checklist）
 - **Round 2**（M4 commit, 61409de → 4624771）：3 fix（LYRICS_LD glob 不寫死 python3.12、Snakefile M1/M2 rule pin venv binary、render override paths resolve before chdir）+ stale doc cleanup
+- **Round 3**（2026-04-28）：三問題修法（音階 / timing / vocal mix）
+  - SOME f0 bug：取消 comment RMVPE branch + 下載 checkpoint → 但發現 v1.0.0-baseline forward() 根本不用 pitch，output 無差別（已記錄）
+  - `scripts/midi_timing.py`：MIDI note onset 替換 Whisper char timing，43/43 行更新
+  - `scripts/mix_audio.py` + `src/karaoke_jp/mix.py`：20% vocal ffmpeg amix
+  - Snakefile 新增 `midi_timing` / `mix` rule，`render` 改吃 `mixed.wav`
+  - `src/karaoke_jp/cli.py` 新增 `karaoke-jp mix` command
+  - 成功 re-render `outputs/tuki-zero/karaoke.mp4`（289 MB, 237s）
 - **本次 review hand-off**：每次 push 後 user 用 codex 跑遠端 review，回饋以 `::code-comment` 標記。Codex 會做小型 sanity check（synthetic input 跑 export_lrc 之類）但不重跑模型 inference。**信任度高**，回饋都打中 — 全照做沒爭議
