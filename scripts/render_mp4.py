@@ -123,10 +123,19 @@ def main(
     app_settings_path: str | None,
     assets_json_path: str | None,
 ) -> None:
-    # Defaults inside the bundled MID2BAR-Player tree.
-    lrc_settings_path = lrc_settings_path or str(MID2BAR_DIR / "lyrics_settings" / "settings_default.json")
-    app_settings_path = app_settings_path or str(MID2BAR_DIR / "app_settings" / "settings.json")
-    assets_json_path = assets_json_path or str(MID2BAR_DIR / "app_settings" / "assets.json")
+    # Defaults inside the bundled MID2BAR-Player tree. Resolve to absolute
+    # paths BEFORE the os.chdir below — otherwise relative override paths
+    # (e.g. `--app-settings my_settings.json` from the user's CWD) would
+    # silently re-anchor to MID2BAR_DIR after the chdir and stop resolving.
+    lrc_settings_path = str(Path(
+        lrc_settings_path or (MID2BAR_DIR / "lyrics_settings" / "settings_default.json")
+    ).resolve())
+    app_settings_path = str(Path(
+        app_settings_path or (MID2BAR_DIR / "app_settings" / "settings.json")
+    ).resolve())
+    assets_json_path = str(Path(
+        assets_json_path or (MID2BAR_DIR / "app_settings" / "assets.json")
+    ).resolve())
 
     # MID2BAR-Player imports its modules by bare names ('import lrc' etc),
     # so we cd into its tree and prepend it to sys.path. Output / input

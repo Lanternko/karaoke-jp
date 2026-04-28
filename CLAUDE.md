@@ -4,7 +4,9 @@
 日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**Kojie 自用練唱**，不上傳。
 
 ## 狀態
-**研究階段已結束（2026-04-28）**，stack 已定，未開始實作。下一步：M1 人聲分離跑通。
+**M1-M4 全 wire（2026-04-28）**，第一首歌 tuki. 「零-zero-」end-to-end 跑通：
+`outputs/tuki-zero/karaoke.mp4`（1080p60，237.5s 對齊原曲，pitch bars + per-char wipe + furigana 全部達成）。
+下一步：polish（M5 amix 多音量版 / M6 Snakemake 批次 / M7 Yomikata + override JSON）。
 
 ## 三件套
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
