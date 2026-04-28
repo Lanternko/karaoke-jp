@@ -84,6 +84,8 @@ rule melody:
         vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
+    resources:
+        gpu=1,
     shell:
         f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}} --backend rmvpe"
 
@@ -105,6 +107,8 @@ rule asr:
         lyrics=str(SONGS_DIR / "{song}" / "lyrics.txt"),
     output:
         asr=str(OUT_DIR / "{song}" / "asr.json"),
+    resources:
+        gpu=1,
     shell:
         f"LD_LIBRARY_PATH={LYRICS_LD}:${{{{LD_LIBRARY_PATH:-}}}} "
         f"{LYRICS_PY} scripts/run_asr.py {{input.vocals:q}} -o {{output.asr:q}} "

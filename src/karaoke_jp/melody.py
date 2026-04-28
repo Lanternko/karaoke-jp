@@ -296,6 +296,92 @@ def segment_f0_to_notes(
     return notes
 
 
+def _duration_weighted_median(pitches: list[int], durations: list[float]) -> float:
+    total = sum(durations)
+    if total == 0:
+        return float(np.median(pitches))
+    cumsum = 0.0
+    for pitch, dur in sorted(zip(pitches, durations)):
+        cumsum += dur
+        if cumsum >= total / 2:
+            return float(pitch)
+    return float(pitches[-1])
+
+
+def fix_phrase_octave(
+    notes: list[tuple[float, float, int]],
+    *,
+    jump_min: int = 10,
+    jump_max: int = 15,
+    tolerance: int = 4,
+) -> list[tuple[float, float, int]]:
+    """Correct phrase-level octave tracking errors using a song-wide anchor.
+
+    RMVPE occasionally locks onto the sub-harmonic for entire phrases (not
+    just isolated notes), producing runs of F3/G3/A#3 where the correct
+    pitches are F4/G4/A#4.  A local-window median cannot fix this because
+    the neighbourhood itself is in the wrong octave.
+
+    Instead we compute a duration-weighted median over the whole note list as
+    the ``anchor_pitch``.  Any note whose pitch is ``jump_min``–``jump_max``+2
+    semitones away from the anchor, and whose octave-shifted pitch lands within
+    ``tolerance`` semitones of the anchor, is shifted by ±12.
+    """
+    if not notes:
+        return []
+    durations = [e - s for s, e, _ in notes]
+    pitches = [p for _, _, p in notes]
+    anchor = _duration_weighted_median(pitches, durations)
+
+    fixed = []
+    for s, e, p in notes:
+        diff_below = anchor - p
+        if jump_min <= diff_below <= jump_max + 2 and abs((p + 12) - anchor) <= tolerance:
+            fixed.append((s, e, p + 12))
+        else:
+            fixed.append((s, e, p))
+    return fixed
+
+
+def fix_octave_errors(
+    notes: list[tuple[float, float, int]],
+    *,
+    jump_min: int = 10,
+    jump_max: int = 15,
+    window: int = 5,
+    tolerance: int = 4,
+) -> list[tuple[float, float, int]]:
+    """Raise notes that RMVPE tracked one octave too low.
+
+    For each note whose pitch is ``jump_min``–``jump_max`` semitones below
+    the median of the ``window`` nearest neighbours, try shifting it up by
+    12.  The shift is accepted only if the result lands within ``tolerance``
+    semitones of that median — so legitimate low notes (e.g. a real chest-
+    voice phrase surrounded by head-voice neighbours) are not touched.
+
+    This corrects the systematic sub-harmonic tracking error that shows up as
+    isolated D#3/E3 notes in an otherwise D#4 melody.
+    """
+    if len(notes) < 3:
+        return list(notes)
+    fixed = list(notes)
+    n = len(fixed)
+    for i in range(n):
+        start_s, end_s, pitch = fixed[i]
+        lo = max(0, i - window)
+        hi = min(n, i + window + 1)
+        neighbours = [fixed[j][2] for j in range(lo, hi) if j != i]
+        if not neighbours:
+            continue
+        median_pitch = int(np.median(neighbours))
+        diff = median_pitch - pitch
+        if jump_min <= diff <= jump_max + 2:
+            candidate = pitch + 12
+            if abs(candidate - median_pitch) <= tolerance:
+                fixed[i] = (start_s, end_s, candidate)
+    return fixed
+
+
 def _extract_midi_with_some(
     vocals_path: Path,
     midi_path: Path,
@@ -428,5 +514,7 @@ def extract_midi(
         max_gap_duration=max_gap_duration,
         pitch_tolerance=pitch_tolerance,
     )
+    notes = fix_phrase_octave(notes)
+    notes = fix_octave_errors(notes)
     _write_midi(notes, midi_path, tempo=tempo)
     return midi_path
