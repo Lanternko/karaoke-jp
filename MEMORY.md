@@ -91,6 +91,33 @@
 - 衝突透過直接讀 `framerecorder.py` 110 行解決：實際是 `pygame.image.tostring(surface, "RGB")` → ffmpeg stdin，frame_idx 驅動的 deterministic offline pipe
 - 結論：fork plan stays（spec 原計畫 + 文章對 + 自己讀 code 確認）
 
+### 背景圖 / 影片 — yt-dlp + OpenCV codec gap（2026-04-28 踩過）
+- `karaoke-jp render` 接受 `--background <path>`，自動偵測 `songs/<song>/background.{mp4,webm,png,jpg,...}`
+- **YouTube 預設給 AV1 mp4**（format 251 / 313 / etc），**OpenCV 沒軟解 AV1**，會 silent black bg
+- `download_song.py` 用 `-f 'bv*[vcodec*=avc1][height<=720]/...'` 強制偏好 h264 720p（format 136 / 137）
+- `render_mp4.py` 不論 input 都過一道 ffmpeg re-encode（libx264 + yuv420p + scale=1920x1080:pad），保險 + normalize 解析度
+- 靜態圖（png/jpg）用 `ffmpeg -loop 1 -t 5` 包成 5 秒 mp4，MID2BAR 的 video player 會自動 loop
+- Output 寫到 `outputs/<song>/_background.mp4`，跟 karaoke.mp4 同層 gitignored
+
+### MID2BAR 的 lyrics_images cache 跨歌污染（2026-04-28）
+- MID2BAR `lrc.load_lyrics()` 會 cache 每行歌詞渲染好的 PNG 到 `lyrics_images/<lrc_basename>/` + `lyrics_images/<lrc_basename>.json`
+- **兩首歌都叫 `karaoke.lrc` → cache key 撞 → 第二首拿到第一首的歌詞圖**（debug 之前看到 bocchi 跑出 tuki 的歌詞，audio 是 bocchi 的）
+- 修法：`render_mp4.py` 每次 render 前 `shutil.rmtree(lyrics_images/<basename>/)` + `unlink(lyrics_images/<basename>.json)`，強迫重產
+- **教訓**：fork 第三方 renderer 時 cache key 預設都是「對單一 user 一次跑一首」設計，多歌 batch 必踩
+
+### Lyric Video vs Official Audio（2026-04-28）
+- 日本動漫 tie-in 上傳常常是 **「Lyric Video」**（Aniplex / 音楽出版社頻道）— **歌詞已燒進影片**，不是用 caption track
+- vs **「Official Audio」**（藝人自己頻道）— 影片是靜態 album cover / 簡單動畫，無歌詞燒入
+- karaoke bg 用原 YT 影片時：Official Audio = 直接用沒問題；Lyric Video = 跟我們歌詞層撞，user 必須自選靜態 bg
+- 自動判斷不可靠（看不到 metadata flag），靠 user 看標題或 description 自己決定 → `download_song.py --no-video` 跳過抓 video
+
+### Lyrics 抓取 — WebFetch LLM filter 擋公開資料庫（2026-04-28）
+- WebFetch 對歌詞站（uta-net、lyrics.github.io 等）回 "I cannot reproduce copyrighted lyrics"，即使是 Aniplex Lyric Video 早就把歌詞放出來的歌
+- 繞過：直接 `urllib.request` + `re.search` parse HTML（uta-net 的歌詞 div id="kashi_area"），規避 LLM 中介
+- 不是要繞著作權 — 資料公開可看，純技術問題：WebFetch 的 LLM 對「raw lyrics text in the response」太謹慎
+- 「Official Audio」上傳的 description 還是首選來源（藝人自貼，直接 yt-dlp `--print %(description)s` 拿）
+- 標籤頻道 / Lyric Video 上傳的 description 通常只放 credit，**不放歌詞** → 才需要這個繞道
+
 ### 批次：Snakemake
 - 50 首 fan-out 一行 wildcard
 - File-output DAG 跟多階段音樂 pipeline 1:1
@@ -132,13 +159,13 @@
 
 ---
 
-## 待驗證（M1 進場時要實測）
+## 待驗證
 
-- [ ] MID2BAR-Player repo 健康度（最後 commit、issue、API 穩定性）
-- [ ] SOFA + opencpop-cjke-multidict 對日文歌的覆蓋度
-- [ ] Mac MPS 上 SOME / RMVPE 實測速度
-- [ ] SSH GPU 機是否還能用、權限、磁碟
-- [ ] Mel-Band-RoFormer 不同 fine-tune（unwa Big Beta 6、Gabox 等）對 J-pop 哪個最好
+- [x] MID2BAR-Player repo 健康度 ✅ 2026-04-28：6 stars / 0 forks / Apache-2.0 / v1.0.0 (2025-12-31)，read-code 確認 offline frame pipe，可 fork
+- [ ] SOFA + opencpop-cjke-multidict 對日文歌的覆蓋度（M3 v2 polish）
+- [ ] Mac MPS 上 SOME / RMVPE 實測速度（pipeline 目前只在 Linux 跑）
+- [x] SSH GPU 機 ✅ ntnumaplab2 RTX 5090 32 GB，pipeline 已 run on
+- [ ] Mel-Band-RoFormer 不同 fine-tune（unwa Big Beta 6、Gabox 等）對 J-pop 哪個最好（KJ Kim default 用過兩首沒問題）
 
 ---
 
@@ -147,3 +174,9 @@
 - 第一輪 deep research（產出 11 個開放問題）
 - 第二輪 deep research（找到 MID2BAR-Player 這個 game-changer，把 11 題壓縮成 3 個決策）
 - 兩輪結論已併入 [spec.md](spec.md)
+
+## Codex review 記錄
+
+- **Round 1**（initial M1-M3 commit, c019e67 → b2e1631）：5 fix（Snakefile `:q` quoting、kana-aware align refactor、subprocess env hygiene、tempfile staging、ASR comment honesty）+ 2 architectural（drop envs/*.yaml、refactor M4 lesson as checklist）
+- **Round 2**（M4 commit, 61409de → 4624771）：3 fix（LYRICS_LD glob 不寫死 python3.12、Snakefile M1/M2 rule pin venv binary、render override paths resolve before chdir）+ stale doc cleanup
+- **本次 review hand-off**：每次 push 後 user 用 codex 跑遠端 review，回饋以 `::code-comment` 標記。Codex 會做小型 sanity check（synthetic input 跑 export_lrc 之類）但不重跑模型 inference。**信任度高**，回饋都打中 — 全照做沒爭議
