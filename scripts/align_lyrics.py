@@ -13,9 +13,9 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import click
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from karaoke_jp.align import (
     asr_chars_to_kana_units,
@@ -24,8 +24,8 @@ from karaoke_jp.align import (
     emit_enhanced_lrc,
     load_asr_chars,
     load_lyrics_chars,
+    lyrics_tokens_to_kana_units,
     needleman_wunsch_kana,
-    text_to_kana_units,
 )
 
 
@@ -42,8 +42,7 @@ def main(asr_path: str, tokens_path: str, aligned_out: str, lrc_out: str) -> Non
 
     tagger = fugashi.Tagger()
     asr_kanas = asr_chars_to_kana_units(asr_chars, tagger)
-    lyr_text = "".join(lc.char for lc in lyrics_chars)
-    lyr_kanas = text_to_kana_units(lyr_text, tagger)
+    lyr_kanas = lyrics_tokens_to_kana_units(lyrics_lines, tagger)
 
     print(
         f"[align] streams: {len(asr_chars)} ASR chars -> {len(asr_kanas)} kana, "
