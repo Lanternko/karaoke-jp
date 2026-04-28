@@ -14,8 +14,9 @@ from karaoke_jp.lrc_export import export_lrc
 @click.command()
 @click.argument("aligned_path", type=click.Path(exists=True, dir_okay=False))
 @click.option("--out", "-o", "out_path", type=click.Path(dir_okay=False), required=True)
-def main(aligned_path: str, out_path: str) -> None:
-    export_lrc(Path(aligned_path), Path(out_path))
+@click.option("--block-size", default=2, type=int, show_default=True)
+def main(aligned_path: str, out_path: str, block_size: int) -> None:
+    export_lrc(Path(aligned_path), Path(out_path), block_size=block_size)
     print(f"wrote {out_path}")
 
 

@@ -47,14 +47,22 @@ def separate(input_path: str, out_dir: str, model: str | None, device: str) -> N
     type=int,
     help="CUDA device index. Pass -1 to force CPU.",
 )
-def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int) -> None:
-    """M2: Vocals -> melody MIDI via openvpi/SOME."""
+@click.option(
+    "--backend",
+    type=click.Choice(["rmvpe", "some"]),
+    default="rmvpe",
+    show_default=True,
+    help="Pitch extraction backend.",
+)
+def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int, backend: str) -> None:
+    """M2: Vocals -> melody MIDI via RMVPE or SOME."""
     from .melody import extract_midi
 
     extract_midi(
         vocals_path,
         midi_path,
         tempo=tempo,
+        backend=backend,
         cuda_device=None if cuda_device < 0 else cuda_device,
     )
 

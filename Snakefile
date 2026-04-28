@@ -44,6 +44,8 @@ KARAOKE_BIN = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "karaoke-jp")
 MAIN_PY = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "python")
 LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
+LRC_BLOCK_SIZE = 2
+MID2BAR_APP_SETTINGS = str(Path("config") / "mid2bar_settings.json")
 
 
 def _nvidia_lib(venv_dir: Path, component: str) -> str:
@@ -77,13 +79,13 @@ rule separate:
 
 
 rule melody:
-    """M2: vocals -> melody MIDI via SOME."""
+    """M2: vocals -> melody MIDI via RMVPE F0 + local note segmentation."""
     input:
         vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
     shell:
-        f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}}"
+        f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}} --backend rmvpe"
 
 
 rule tokenize:
@@ -160,7 +162,8 @@ rule export_lrc:
     output:
         lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
     shell:
-        f"{MAIN_PY} scripts/export_lrc.py {{input.aligned:q}} -o {{output.lrc:q}}"
+        f"{MAIN_PY} scripts/export_lrc.py {{input.aligned:q}} -o {{output.lrc:q}} "
+        f"--block-size {LRC_BLOCK_SIZE}"
 
 
 rule midi_markers:
@@ -172,7 +175,8 @@ rule midi_markers:
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
     shell:
         f"{MAIN_PY} scripts/add_midi_markers.py "
-        f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} --out {{output.midi:q}}"
+        f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} --out {{output.midi:q}} "
+        f"--block-size {LRC_BLOCK_SIZE}"
 
 
 rule mix:
@@ -226,8 +230,10 @@ rule render:
         mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),
     params:
         bg=_background_arg,
+        app_settings=MID2BAR_APP_SETTINGS,
     shell:
         f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
         f"{RENDER_PY} scripts/render_mp4.py "
         f"--audio {{input.audio:q}} --midi {{input.midi:q}} "
-        f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} {{params.bg}}"
+        f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} "
+        f"--app-settings {{params.app_settings:q}} {{params.bg}}"
