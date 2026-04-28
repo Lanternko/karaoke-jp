@@ -30,7 +30,7 @@ def source_for(song_id):
 
 rule all:
     input:
-        expand(str(OUT_DIR / "{song}" / "melody.mid"), song=SONG_IDS),
+        expand(str(OUT_DIR / "{song}" / "karaoke.mp4"), song=SONG_IDS),
 
 
 rule separate:
@@ -56,3 +56,91 @@ rule melody:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
     shell:
         "karaoke-jp melody {input.vocals:q} -o {output.midi:q}"
+
+
+# M3 stages run in the lyrics venv (faster-whisper + fugashi). The wrappers
+# already expect that venv on PATH; rules call the scripts directly.
+LYRICS_PY = "~/venvs/karaoke-jp-lyrics/bin/python"
+LYRICS_LD = (
+    "$HOME/venvs/karaoke-jp-lyrics/lib/python3.12/site-packages/nvidia/cublas/lib:"
+    "$HOME/venvs/karaoke-jp-lyrics/lib/python3.12/site-packages/nvidia/cudnn/lib"
+)
+
+
+rule tokenize:
+    """M3a: lyrics.txt -> tokens.json (fugashi + UniDic readings)."""
+    input:
+        lyrics=str(SONGS_DIR / "{song}" / "lyrics.txt"),
+    output:
+        tokens=str(OUT_DIR / "{song}" / "tokens.json"),
+    shell:
+        f"{LYRICS_PY} scripts/tokenize_lyrics.py {{input.lyrics:q}} -o {{output.tokens:q}}"
+
+
+rule asr:
+    """M3b: vocals -> ASR JSON (faster-whisper, prompted with lyrics head)."""
+    input:
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+        lyrics=str(SONGS_DIR / "{song}" / "lyrics.txt"),
+    output:
+        asr=str(OUT_DIR / "{song}" / "asr.json"),
+    shell:
+        f"LD_LIBRARY_PATH={LYRICS_LD}:$LD_LIBRARY_PATH "
+        f"{LYRICS_PY} scripts/run_asr.py {{input.vocals:q}} -o {{output.asr:q}} "
+        f"--lyrics {{input.lyrics:q}}"
+
+
+rule align:
+    """M3c: ASR + tokens -> aligned.json + ruby.lrc (kana-aware NW)."""
+    input:
+        asr=str(OUT_DIR / "{song}" / "asr.json"),
+        tokens=str(OUT_DIR / "{song}" / "tokens.json"),
+    output:
+        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+        lrc=str(OUT_DIR / "{song}" / "ruby.lrc"),
+    shell:
+        f"{LYRICS_PY} scripts/align_lyrics.py "
+        f"--asr {{input.asr:q}} --tokens {{input.tokens:q}} "
+        f"--aligned-out {{output.aligned:q}} --lrc-out {{output.lrc:q}}"
+
+
+# M4 stages run in the main venv (mido) and the render venv (Pygame +
+# MID2BAR-Player tree). Same `:q` discipline as above.
+RENDER_PY = "~/venvs/karaoke-jp-render/bin/python"
+
+
+rule export_lrc:
+    """M4a: aligned.json -> MID2BAR-flavored .lrc (centiseconds + @RubyN=)."""
+    input:
+        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+    output:
+        lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
+    shell:
+        "python scripts/export_lrc.py {input.aligned:q} -o {output.lrc:q}"
+
+
+rule midi_markers:
+    """M4b: melody.mid + aligned.json -> melody_markers.mid (page boundaries)."""
+    input:
+        midi=str(OUT_DIR / "{song}" / "melody.mid"),
+        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+    output:
+        midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
+    shell:
+        "python scripts/add_midi_markers.py "
+        "--midi {input.midi:q} --aligned {input.aligned:q} --out {output.midi:q}"
+
+
+rule render:
+    """M4c: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac)."""
+    input:
+        instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
+        midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
+        lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
+    output:
+        mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),
+    shell:
+        f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
+        f"{RENDER_PY} scripts/render_mp4.py "
+        f"--audio {{input.instrumental:q}} --midi {{input.midi:q}} "
+        f"--lrc {{input.lrc:q}} --out {{output.mp4:q}}"
