@@ -1,11 +1,15 @@
-# karaoke-jp Snakemake pipeline.
+# karaoke-jp Snakemake pipeline (M1-M4 wired).
 #
 # Usage:
 #   snakemake --rerun-triggers params input code -j 1 outputs/<song>/karaoke.mp4
 #
-# At M1, only the `separate` rule is wired. Higher rules become real as
-# milestones land.
+# DAG: separate -> melody -> {tokenize, asr -> align} -> {midi_markers,
+#      export_lrc} -> render. Each stage runs in its own venv (see
+#      CLAUDE.md "single source of truth"). Rules invoke the venv binary
+#      by absolute path so reproducibility does not depend on the caller's
+#      PATH or which venv they activated first.
 
+import glob
 from pathlib import Path
 
 SONGS_DIR = Path("songs")
@@ -33,6 +37,29 @@ rule all:
         expand(str(OUT_DIR / "{song}" / "karaoke.mp4"), song=SONG_IDS),
 
 
+# Per-stage venv binaries (CLAUDE.md "single source of truth"). Pinning by
+# absolute path avoids "depends on caller's active venv" surprises that
+# bare-name commands like `karaoke-jp` or `python` have.
+KARAOKE_BIN = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "karaoke-jp")
+MAIN_PY = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "python")
+LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
+RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
+
+
+def _nvidia_lib(venv_dir: Path, component: str) -> str:
+    """Return the absolute path to the nvidia/<component>/lib directory in
+    the lyrics venv, glob-resolving the python3.X minor version."""
+    pattern = str(venv_dir / "lib" / "python*" / "site-packages" / "nvidia" / component / "lib")
+    matches = sorted(glob.glob(pattern))
+    return matches[-1] if matches else ""
+
+
+_LYRICS_VENV = Path.home() / "venvs" / "karaoke-jp-lyrics"
+LYRICS_LD = ":".join(
+    p for p in (_nvidia_lib(_LYRICS_VENV, "cublas"), _nvidia_lib(_LYRICS_VENV, "cudnn")) if p
+)
+
+
 rule separate:
     """M1: Mel-Band-RoFormer vocal separation."""
     input:
@@ -45,7 +72,7 @@ rule separate:
     # `:q` shell-quotes path placeholders so song ids / source paths
     # containing spaces (or anything else the shell might split on) survive.
     shell:
-        "karaoke-jp separate {input.audio:q} -o {params.out_dir:q}"
+        f"{KARAOKE_BIN} separate {{input.audio:q}} -o {{params.out_dir:q}}"
 
 
 rule melody:
@@ -55,16 +82,7 @@ rule melody:
     output:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
     shell:
-        "karaoke-jp melody {input.vocals:q} -o {output.midi:q}"
-
-
-# M3 stages run in the lyrics venv (faster-whisper + fugashi). The wrappers
-# already expect that venv on PATH; rules call the scripts directly.
-LYRICS_PY = "~/venvs/karaoke-jp-lyrics/bin/python"
-LYRICS_LD = (
-    "$HOME/venvs/karaoke-jp-lyrics/lib/python3.12/site-packages/nvidia/cublas/lib:"
-    "$HOME/venvs/karaoke-jp-lyrics/lib/python3.12/site-packages/nvidia/cudnn/lib"
-)
+        f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}}"
 
 
 rule tokenize:
@@ -104,10 +122,9 @@ rule align:
         f"--aligned-out {{output.aligned:q}} --lrc-out {{output.lrc:q}}"
 
 
-# M4 stages: lrc/marker prep run in the main venv (mido lives there), and
-# the actual render runs in the dedicated MID2BAR venv (Pygame + opencv).
-MAIN_PY = "~/venvs/karaoke-jp/bin/python"
-RENDER_PY = "~/venvs/karaoke-jp-render/bin/python"
+# M4 stages: lrc/marker prep run in the main venv (mido lives there); the
+# actual render runs in the dedicated MID2BAR venv (Pygame + opencv).
+# (MAIN_PY / RENDER_PY were defined alongside the other binaries above.)
 
 
 rule export_lrc:
