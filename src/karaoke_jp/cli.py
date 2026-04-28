@@ -59,5 +59,34 @@ def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int) -> 
     )
 
 
+@main.command()
+@click.argument("instrumental_path", type=click.Path(exists=True, dir_okay=False))
+@click.argument("vocals_path", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--out", "-o", "out_path",
+    type=click.Path(dir_okay=False),
+    required=True,
+    help="Output mixed WAV path.",
+)
+@click.option(
+    "--vocal-ratio",
+    default=0.20,
+    type=float,
+    show_default=True,
+    help="Vocal volume as a fraction of instrumental (0.0=mute, 1.0=equal).",
+)
+def mix(
+    instrumental_path: str,
+    vocals_path: str,
+    out_path: str,
+    vocal_ratio: float,
+) -> None:
+    """M5: Blend instrumental + vocals at VOCAL_RATIO (default 20 %)."""
+    from .mix import mix_vocals
+
+    mix_vocals(instrumental_path, vocals_path, out_path, vocal_ratio=vocal_ratio)
+    print(f"[mix] wrote {out_path}")
+
+
 if __name__ == "__main__":
     main()
