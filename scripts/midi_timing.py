@@ -26,12 +26,13 @@ from __future__ import annotations
 
 import json
 import sys
+import unicodedata
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import click
 import mido
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 
 # ---------------------------------------------------------------------------
@@ -56,14 +57,13 @@ def extract_notes(midi_path: Path) -> list[tuple[float, float, int]]:
                 tempo = msg.tempo
             elif msg.type == "note_on" and msg.velocity > 0:
                 active[msg.note] = abs_tick
-            elif msg.type == "note_off" or (
-                msg.type == "note_on" and msg.velocity == 0
+            elif (msg.type == "note_off" or msg.type == "note_on" and msg.velocity == 0) and (
+                msg.note in active
             ):
-                if msg.note in active:
-                    on_tick = active.pop(msg.note)
-                    on_s = mido.tick2second(on_tick, mid.ticks_per_beat, tempo)
-                    off_s = mido.tick2second(abs_tick, mid.ticks_per_beat, tempo)
-                    events.append((on_s, off_s, msg.note))
+                on_tick = active.pop(msg.note)
+                on_s = mido.tick2second(on_tick, mid.ticks_per_beat, tempo)
+                off_s = mido.tick2second(abs_tick, mid.ticks_per_beat, tempo)
+                events.append((on_s, off_s, msg.note))
 
     events.sort(key=lambda e: e[0])
     return events
@@ -83,8 +83,10 @@ def _match_notes_to_chars(
     proximity hint for which note to pick when multiple candidates exist.
 
     Returns None if there are no notes (caller keeps Whisper timing).
-    If there are fewer notes than chars, the surplus chars share the last
-    note's timing and are distributed proportionally to their note's offset.
+    The returned tuples are per-char ``(start, end)`` spans. When there are
+    fewer notes than chars, multiple chars can share a note; in that case we
+    subdivide the available note duration so every char still gets a positive
+    span instead of collapsing to zero length.
     """
     if not notes:
         return None
@@ -98,7 +100,7 @@ def _match_notes_to_chars(
     if n_n >= n_c:
         # Greedy: for each char pick the closest available note while keeping
         # enough notes for the remaining chars.
-        result: list[tuple[float, float]] = []
+        chosen: list[int] = []
         ptr = 0
         for i, wt in enumerate(whisper_times):
             remaining_chars = n_c - i
@@ -112,20 +114,88 @@ def _match_notes_to_chars(
                 if dist < best_dist:
                     best_dist = dist
                     best_j = j
-            result.append((notes[best_j][0], notes[best_j][1]))
+            chosen.append(best_j)
             ptr = best_j + 1
+        result: list[tuple[float, float]] = []
+        for i, note_idx in enumerate(chosen):
+            note_on, note_off, _ = notes[note_idx]
+            note_end = notes[chosen[i + 1]][0] if i + 1 < len(chosen) else note_off
+            result.append((note_on, note_end))
         return result
 
     else:
-        # Fewer notes than chars: assign all notes to chars linearly,
-        # then fill remaining chars by interpolating from the last note's offset.
-        result = []
-        # How many chars per note (float)?
+        # Fewer notes than chars: assign chars to notes monotonically, then
+        # subdivide each note's usable time span across its char group.
+        result: list[tuple[float, float]] = []
         chars_per_note = n_c / n_n
-        for i in range(n_c):
-            note_idx = min(int(i / chars_per_note), n_n - 1)
-            result.append((notes[note_idx][0], notes[note_idx][1]))
+        note_idxs = [min(int(i / chars_per_note), n_n - 1) for i in range(n_c)]
+        i = 0
+        while i < n_c:
+            note_idx = note_idxs[i]
+            j = i + 1
+            while j < n_c and note_idxs[j] == note_idx:
+                j += 1
+
+            note_on, note_off, _ = notes[note_idx]
+            usable_end = notes[note_idx + 1][0] if note_idx + 1 < n_n else note_off
+            usable_end = max(usable_end, note_on)
+
+            group_size = j - i
+            span = usable_end - note_on
+            for offset in range(group_size):
+                ch_start = note_on + span * offset / group_size
+                ch_end = note_on + span * (offset + 1) / group_size
+                result.append((ch_start, ch_end))
+            i = j
         return result
+
+
+def _is_sung_char(ch: str) -> bool:
+    """Return True for lyric chars that should consume a MIDI note onset."""
+    if ch.isspace() or ch == "　":
+        return False
+    return unicodedata.category(ch)[0] not in {"P", "S"}
+
+
+def _retime_unsung_chars(chars: list[dict]) -> None:
+    """Pin punctuation / symbols to neighbouring sung-char boundaries.
+
+    These chars should stay in the output LRC body, but must not consume MIDI
+    note onsets. We therefore snap them to the closest surrounding sung-char
+    boundary so timing stays monotone after the sung chars are retimed.
+    """
+    sung_indices = [i for i, ch in enumerate(chars) if _is_sung_char(ch["char"])]
+    if not sung_indices:
+        return
+
+    prev_sung: list[int | None] = [None] * len(chars)
+    next_sung: list[int | None] = [None] * len(chars)
+
+    last_seen: int | None = None
+    for i, ch in enumerate(chars):
+        if _is_sung_char(ch["char"]):
+            last_seen = i
+        prev_sung[i] = last_seen
+
+    last_seen = None
+    for i in range(len(chars) - 1, -1, -1):
+        if _is_sung_char(chars[i]["char"]):
+            last_seen = i
+        next_sung[i] = last_seen
+
+    for i, ch in enumerate(chars):
+        if _is_sung_char(ch["char"]):
+            continue
+        prev_idx = prev_sung[i]
+        next_idx = next_sung[i]
+        if prev_idx is not None:
+            t = float(chars[prev_idx]["end"])
+        elif next_idx is not None:
+            t = float(chars[next_idx]["start"])
+        else:
+            continue
+        ch["start"] = round(t, 3)
+        ch["end"] = round(t, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +215,12 @@ def apply_midi_timing(
     kept = 0
 
     for line in lines:
-        # Flatten non-space chars in this line, keeping references for mutation
-        char_refs: list[dict] = []
-        for tok in line.get("tokens", []):
-            for ch in tok.get("chars", []):
-                if ch["char"] not in (" ", "　"):
-                    char_refs.append(ch)
+        all_chars = [
+            ch
+            for tok in line.get("tokens", [])
+            for ch in tok.get("chars", [])
+        ]
+        char_refs = [ch for ch in all_chars if _is_sung_char(ch["char"])]
 
         if not char_refs:
             continue
@@ -166,23 +236,24 @@ def apply_midi_timing(
             kept += 1
             continue
 
-        # Write char timing: start = note_onset, end = next char's start
-        for i, (ch_dict, (note_on, note_off)) in enumerate(zip(char_refs, matched)):
-            if i + 1 < len(matched):
-                note_end = matched[i + 1][0]  # next note onset
-            else:
-                note_end = note_off
-            ch_dict["start"] = round(note_on, 3)
-            ch_dict["end"] = round(note_end, 3)
+        # Write sung-char timing directly from the matched MIDI spans.
+        for ch_dict, (char_start, char_end) in zip(char_refs, matched, strict=False):
+            ch_dict["start"] = round(char_start, 3)
+            ch_dict["end"] = round(char_end, 3)
 
-        # Re-derive token timing from updated chars
+        _retime_unsung_chars(all_chars)
+
+        # Re-derive token timing from updated chars.
         for tok in line.get("tokens", []):
-            tok_chars = [c for c in tok.get("chars", []) if c["char"] not in (" ", "　")]
-            if tok_chars:
-                tok["start"] = tok_chars[0]["start"]
-                tok["end"] = tok_chars[-1]["end"]
+            tok_chars = tok.get("chars", [])
+            sung_tok_chars = [c for c in tok_chars if _is_sung_char(c["char"])]
+            timing_chars = sung_tok_chars or tok_chars
+            if timing_chars:
+                tok["start"] = timing_chars[0]["start"]
+                tok["end"] = timing_chars[-1]["end"]
 
-        # Re-derive line timing
+        # Re-derive line timing from sung chars so decorative punctuation does
+        # not move marker placement or ruby windows by itself.
         all_starts = [c["start"] for c in char_refs]
         all_ends = [c["end"] for c in char_refs]
         line["start"] = round(min(all_starts), 3)
@@ -225,11 +296,8 @@ def main(midi_path: str, aligned_path: str, out_path: str | None, margin: float)
     print(f"[midi_timing] loaded {len(notes)} notes from {midi_path}")
 
     aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
-    total_chars = sum(
-        sum(1 for ch in line["text"] if ch not in (" ", "　"))
-        for line in aligned
-    )
-    print(f"[midi_timing] {len(aligned)} lines, {total_chars} non-space chars")
+    total_chars = sum(sum(1 for ch in line["text"] if _is_sung_char(ch)) for line in aligned)
+    print(f"[midi_timing] {len(aligned)} lines, {total_chars} sung chars")
 
     upd, kept = apply_midi_timing(aligned, notes, window_margin=margin)
     print(f"[midi_timing] updated {upd} lines with MIDI timing, kept Whisper for {kept} lines")
