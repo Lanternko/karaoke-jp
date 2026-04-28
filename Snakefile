@@ -149,16 +149,39 @@ rule midi_markers:
         f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} --out {{output.midi:q}}"
 
 
+def _background_arg(wc):
+    """Return ``--background <path>`` if a background asset exists for this
+    song, else empty. Searched in
+    ``songs/<song>/background.{mp4,webm,mov,mkv,png,jpg,jpeg,webp}``.
+
+    render_mp4.py always re-encodes the bg through ffmpeg before passing to
+    MID2BAR, so source codec / container does not matter (avoids OpenCV's
+    AV1 decode gap and silently-corrupt cv2.VideoCapture failures)."""
+    import shlex
+    for ext in ("mp4", "webm", "mov", "mkv", "png", "jpg", "jpeg", "webp"):
+        p = SONGS_DIR / wc.song / f"background.{ext}"
+        if p.exists():
+            return f"--background {shlex.quote(str(p))}"
+    return ""
+
+
 rule render:
-    """M4c: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac)."""
+    """M4c: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac).
+
+    Auto-detects ``songs/<song>/background.{mp4,webm,png,jpg,jpeg}`` and
+    feeds it as the rendered backdrop; if absent, the bundled MID2BAR blue
+    gradient is used.
+    """
     input:
         instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
         lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
     output:
         mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),
+    params:
+        bg=_background_arg,
     shell:
         f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
         f"{RENDER_PY} scripts/render_mp4.py "
         f"--audio {{input.instrumental:q}} --midi {{input.midi:q}} "
-        f"--lrc {{input.lrc:q}} --out {{output.mp4:q}}"
+        f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} {{params.bg}}"
