@@ -22,7 +22,8 @@ overrides) are deferred — see `spec.md` §5.
 YouTube URL
   └─ download ─► source.wav, background.mp4         (M0, yt-dlp)
        └─ separate ─► vocals.wav, instrumental.wav  (M1, melband-roformer-infer)
-            └─ melody  ─► melody.mid                (M2, SOME / parselmouth f0)
+            └─ melody  ─► melody.mid                (M2, RMVPE f0 + local note segmentation;
+                                                     SOME fallback)
             └─ tokenize + asr + align ─► aligned.json
                                                     (M3, fugashi + faster-whisper
                                                      + kana-aware NW)

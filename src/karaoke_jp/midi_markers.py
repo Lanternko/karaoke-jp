@@ -1,12 +1,12 @@
 """Inject MID2BAR-style page markers into a melody MIDI.
 
-MID2BAR-Player's renderer divides the song into "pages" using
-``MetaMessage('marker', text=...)`` events. Without markers the bar
-display has no page break and the lyric layer cannot scroll. The shipped
-``midi_marker_editor.py`` is a Tkinter GUI; we want a headless
-``aligned.json -> markers`` step.
+MID2BAR-Player's renderer divides the bar display into "pages" using
+``MetaMessage('marker', text=...)`` events. Our LRC export groups lyrics into
+multi-line blocks, so page markers need to follow the same grouping.
 
-Strategy: one marker per lyrics line at the line's ``start`` second.
+We also clamp each next-page marker so it never lands before the previous page
+has actually finished singing. That avoids PREVIEW_TIME cutting off a page's
+final sustained note.
 """
 from __future__ import annotations
 
@@ -29,11 +29,16 @@ def inject_line_markers(
     midi_path: str | Path,
     aligned_path: str | Path,
     out_path: str | Path,
+    *,
+    block_size: int = 2,
 ) -> int:
-    """Add one ``marker`` meta-event per lyrics line at its start time.
+    """Add one ``marker`` meta-event per lyric block at its start time.
 
     Returns the number of markers written.
     """
+    if block_size not in (1, 2, 3, 4):
+        raise ValueError(f"block_size must be 1..4, got {block_size}")
+
     midi_path = Path(midi_path)
     aligned_path = Path(aligned_path)
     out_path = Path(out_path)
@@ -69,29 +74,29 @@ def inject_line_markers(
         )
         mid.tracks[0].insert(0, ts_msg)
 
-    line_starts: list[tuple[float, str]] = []
-    for i, line in enumerate(aligned, start=1):
-        if not line["tokens"]:
-            continue
-        line_starts.append((float(line["start"]), f"L{i:02d}"))
-    line_starts.sort(key=lambda p: p[0])
-
-    if not line_starts:
+    lines = [line for line in aligned if line["tokens"]]
+    if not lines:
         # No lines to mark; just copy the file through.
         mid.save(out_path)
         return 0
 
-    # Add a tail marker so the renderer has an end-of-page boundary
-    # after the last lyrics line.
-    last_t = line_starts[-1][0]
-    final_line = aligned[-1]
-    tail_t = max(float(final_line.get("end", last_t)), last_t) + 1.0
-    line_starts.append((tail_t, "END"))
+    blocks = [lines[i:i + block_size] for i in range(0, len(lines), block_size)]
+    page_starts: list[tuple[float, str]] = []
+    prev_page_end = 0.0
+    for i, block in enumerate(blocks, start=1):
+        raw_start = float(block[0]["start"])
+        page_end = max(float(line.get("end", raw_start)) for line in block)
+        start_time = max(raw_start, prev_page_end)
+        page_starts.append((start_time, f"P{i:02d}"))
+        prev_page_end = max(prev_page_end, page_end, start_time)
+
+    tail_t = prev_page_end + 1.0
+    page_starts.append((tail_t, "END"))
 
     # Build a marker-only track. Mido tracks use *delta* times.
     marker_track = mido.MidiTrack()
     prev_tick = 0
-    for t_s, label in line_starts:
+    for t_s, label in page_starts:
         abs_tick = _seconds_to_ticks(t_s, mid.ticks_per_beat, tempo_us)
         delta = max(abs_tick - prev_tick, 0)
         marker_track.append(mido.MetaMessage("marker", text=label, time=delta))
@@ -101,4 +106,4 @@ def inject_line_markers(
     mid.tracks.append(marker_track)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     mid.save(out_path)
-    return len(line_starts) - 1  # don't count the synthetic END
+    return len(page_starts) - 1  # don't count the synthetic END

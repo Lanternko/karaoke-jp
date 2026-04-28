@@ -15,9 +15,10 @@ from karaoke_jp.midi_markers import inject_line_markers
 @click.option("--midi", "midi_path", type=click.Path(exists=True, dir_okay=False), required=True)
 @click.option("--aligned", "aligned_path", type=click.Path(exists=True, dir_okay=False), required=True)
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
-def main(midi_path: str, aligned_path: str, out_path: str) -> None:
-    n = inject_line_markers(midi_path, aligned_path, out_path)
-    print(f"injected {n} line markers -> {out_path}")
+@click.option("--block-size", default=2, type=int, show_default=True)
+def main(midi_path: str, aligned_path: str, out_path: str, block_size: int) -> None:
+    n = inject_line_markers(midi_path, aligned_path, out_path, block_size=block_size)
+    print(f"injected {n} page markers -> {out_path}")
 
 
 if __name__ == "__main__":

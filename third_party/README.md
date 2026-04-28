@@ -14,6 +14,14 @@ git clone --depth 1 https://github.com/openvpi/SOME.git
 cd SOME && mkdir -p pretrained && cd pretrained
 wget https://github.com/openvpi/SOME/releases/download/v1.0.0-baseline/0119_continuous128_5spk.zip
 unzip 0119_continuous128_5spk.zip
+
+# RMVPE checkpoint for the default `karaoke-jp melody --backend rmvpe` path.
+wget https://github.com/yxlllc/RMVPE/releases/download/230917/rmvpe.zip
+rm -rf rmvpe rmvpe_unpack
+unzip -o rmvpe.zip -d rmvpe_unpack
+mkdir -p rmvpe
+find rmvpe_unpack -name model.pt -exec mv {} rmvpe/model.pt \;
+rm -rf rmvpe_unpack rmvpe.zip
 ```
 
 Runtime venv (avoids fairseq + librosa<0.10 collision with main env):
