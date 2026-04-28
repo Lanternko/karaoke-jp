@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from karaoke_jp.melody import fix_octave_errors, fix_phrase_octave, segment_f0_to_notes
+from karaoke_jp.melody import fill_held_note_gaps, fix_octave_errors, fix_phrase_octave, segment_f0_to_notes
 
 
 def _midi_to_hz(midi_note: int) -> float:
@@ -93,6 +93,32 @@ def test_fix_phrase_octave_drops_notes_too_far_for_tolerance() -> None:
     assert fixed[-1][2] == 60  # C3 → C4
 
 
+def test_fix_phrase_octave_iterates_until_convergence() -> None:
+    # Two-tier subharmonic requiring a second pass.
+    # Distribution (each note 0.2s):
+    #   25 × F4(65) = 5.0s, 25 × D#4(63) = 5.0s,
+    #   20 × F3(53) = 4.0s, 10 × G3(55) = 2.0s.
+    # Total 16.0s, median 8.0s.
+    #
+    # Pass 1 anchor: F3 4.0s + G3 6.0s < 8.0 → D#4 cumulative 11.0s ≥ 8.0 → anchor=D#4(63)
+    #   F3(53): diff=10 ✓; candidate=65, |65-63|=2 ≤ 4 → raised to F4.
+    #   G3(55): diff=8 < jump_min=10 → NOT raised yet.
+    #
+    # Pass 2 anchor: G3 2.0s + D#4 5.0s = 7.0s < 8.0 → F4 9.0s cumulative ≥ 8.0 → anchor=F4(65)
+    #   G3(55): diff=10 ✓; candidate=67, |67-65|=2 ≤ 4 → raised to G4.
+    notes = (
+        [(i * 0.2, i * 0.2 + 0.2, 65) for i in range(25)]           # F4
+        + [(5.0 + i * 0.2, 5.0 + i * 0.2 + 0.2, 63) for i in range(25)]  # D#4
+        + [(10.0 + i * 0.2, 10.0 + i * 0.2 + 0.2, 53) for i in range(20)]  # F3
+        + [(14.0 + i * 0.2, 14.0 + i * 0.2 + 0.2, 55) for i in range(10)]  # G3
+    )
+    fixed = fix_phrase_octave(notes)
+    # F3 → F4
+    assert all(n[2] == 65 for n in fixed[50:70])
+    # G3 → G4  (only reachable after F3→F4 shifts anchor up to F4)
+    assert all(n[2] == 67 for n in fixed[70:])
+
+
 # ---------------------------------------------------------------------------
 # fix_octave_errors tests
 # ---------------------------------------------------------------------------
@@ -141,3 +167,38 @@ def test_fix_octave_errors_does_not_touch_notes_outside_jump_range() -> None:
     ]
     fixed = fix_octave_errors(notes)
     assert fixed[3][2] == 56  # untouched
+
+
+# ---------------------------------------------------------------------------
+# fill_held_note_gaps tests
+# ---------------------------------------------------------------------------
+
+def test_fill_held_note_gaps_fills_same_pitch_gap() -> None:
+    # 10s gap between two D#4 notes — should be bridged
+    notes = [(0.0, 1.0, 63), (11.0, 12.0, 63)]
+    filled = fill_held_note_gaps(notes, gap_threshold=8.0, pitch_tolerance=0)
+    assert len(filled) == 3
+    bridge = [n for n in filled if n[0] == pytest.approx(1.0)][0]
+    assert bridge == pytest.approx((1.0, 11.0, 63))
+
+
+def test_fill_held_note_gaps_skips_short_gap() -> None:
+    notes = [(0.0, 1.0, 63), (5.0, 6.0, 63)]  # 4s gap < threshold
+    filled = fill_held_note_gaps(notes, gap_threshold=8.0)
+    assert len(filled) == 2
+
+
+def test_fill_held_note_gaps_skips_different_pitch() -> None:
+    # F#4→D#4 (diff=3) — different pitches suggest real rest, not held note
+    notes = [(0.0, 1.0, 66), (11.0, 12.0, 63)]
+    filled = fill_held_note_gaps(notes, gap_threshold=8.0, pitch_tolerance=0)
+    assert len(filled) == 2  # no bridge inserted
+
+
+def test_fill_held_note_gaps_preserves_note_order() -> None:
+    notes = [(0.0, 1.0, 65), (15.0, 16.0, 65), (17.0, 18.0, 67)]
+    filled = fill_held_note_gaps(notes, gap_threshold=8.0)
+    assert filled[0][0] == pytest.approx(0.0)
+    assert filled[1][0] == pytest.approx(1.0)   # bridge
+    assert filled[2][0] == pytest.approx(15.0)
+    assert filled[3][0] == pytest.approx(17.0)

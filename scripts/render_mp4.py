@@ -224,6 +224,16 @@ def main(
         return original_start(self, *args, **kwargs)
     PipeFrameRecorder.start = patched_start
 
+    # MID2BAR's settings_schema uses frozen dataclasses (BarCountEntry,
+    # AnimationEntry) for dict entries, but app.py accesses them with ["key"]
+    # subscript notation.  Add __getitem__ so attribute access works either way.
+    # This must be patched before app.py is imported (the draw methods reference
+    # the class at call time, so late-binding is fine).
+    import settings_schema as _ss
+    for _cls in (_ss.BarCountEntry, _ss.AnimationEntry):
+        if not hasattr(_cls, "__getitem__"):
+            _cls.__getitem__ = lambda self, key: getattr(self, key)  # type: ignore[assignment]
+
     from app import Mid2barPlayerApp
 
     app = Mid2barPlayerApp(

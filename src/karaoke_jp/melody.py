@@ -314,6 +314,7 @@ def fix_phrase_octave(
     jump_min: int = 10,
     jump_max: int = 15,
     tolerance: int = 4,
+    max_passes: int = 5,
 ) -> list[tuple[float, float, int]]:
     """Correct phrase-level octave tracking errors using a song-wide anchor.
 
@@ -326,21 +327,34 @@ def fix_phrase_octave(
     the ``anchor_pitch``.  Any note whose pitch is ``jump_min``–``jump_max``+2
     semitones away from the anchor, and whose octave-shifted pitch lands within
     ``tolerance`` semitones of the anchor, is shifted by ±12.
+
+    After each pass the anchor is recomputed from the updated notes.  This
+    handles the common case where a large sub-harmonic cluster dragged the
+    initial anchor down, hiding a second tier of slightly-elevated errors that
+    only become detectable once the first tier is corrected.  Iteration stops
+    when no note changes or ``max_passes`` is reached.
     """
     if not notes:
         return []
-    durations = [e - s for s, e, _ in notes]
-    pitches = [p for _, _, p in notes]
-    anchor = _duration_weighted_median(pitches, durations)
+    current = list(notes)
+    for _ in range(max_passes):
+        durations = [e - s for s, e, _ in current]
+        pitches = [p for _, _, p in current]
+        anchor = _duration_weighted_median(pitches, durations)
 
-    fixed = []
-    for s, e, p in notes:
-        diff_below = anchor - p
-        if jump_min <= diff_below <= jump_max + 2 and abs((p + 12) - anchor) <= tolerance:
-            fixed.append((s, e, p + 12))
-        else:
-            fixed.append((s, e, p))
-    return fixed
+        nxt = []
+        changed = False
+        for s, e, p in current:
+            diff_below = anchor - p
+            if jump_min <= diff_below <= jump_max + 2 and abs((p + 12) - anchor) <= tolerance:
+                nxt.append((s, e, p + 12))
+                changed = True
+            else:
+                nxt.append((s, e, p))
+        current = nxt
+        if not changed:
+            break
+    return current
 
 
 def fix_octave_errors(
@@ -380,6 +394,41 @@ def fix_octave_errors(
             if abs(candidate - median_pitch) <= tolerance:
                 fixed[i] = (start_s, end_s, candidate)
     return fixed
+
+
+def fill_held_note_gaps(
+    notes: list[tuple[float, float, int]],
+    *,
+    gap_threshold: float = 8.0,
+    pitch_tolerance: int = 0,
+) -> list[tuple[float, float, int]]:
+    """Fill long silences that are clearly held notes RMVPE dropped.
+
+    RMVPE loses tracking on very long sustained notes (>8 s), leaving a gap
+    even though the singer is still vocalising.  When the note on both sides
+    of a gap is the same pitch (within ``pitch_tolerance`` semitones), we
+    insert a bridging note to cover the silent span.
+
+    Conservative defaults (pitch_tolerance=0) mean only exact-match pairs are
+    filled, avoiding false insertions during real instrumental breaks where the
+    pitches before/after the rest are usually different.
+    """
+    if len(notes) < 2:
+        return list(notes)
+    result = list(notes)
+    inserts: list[tuple[float, float, int]] = []
+    for i in range(len(notes) - 1):
+        gap = notes[i + 1][0] - notes[i][1]
+        if gap < gap_threshold:
+            continue
+        prev_p = notes[i][2]
+        next_p = notes[i + 1][2]
+        if abs(prev_p - next_p) <= pitch_tolerance:
+            fill_p = round((prev_p + next_p) / 2)
+            inserts.append((notes[i][1], notes[i + 1][0], fill_p))
+    result.extend(inserts)
+    result.sort(key=lambda n: n[0])
+    return result
 
 
 def _extract_midi_with_some(
@@ -516,5 +565,6 @@ def extract_midi(
     )
     notes = fix_phrase_octave(notes)
     notes = fix_octave_errors(notes)
+    notes = fill_held_note_gaps(notes)
     _write_midi(notes, midi_path, tempo=tempo)
     return midi_path
