@@ -28,15 +28,27 @@ python3 -m venv ~/venvs/karaoke-jp-melody
   --extra-index-url https://pypi.org/simple
 ```
 
-## keisuke-okb/MID2BAR-Player — JOYSOUND-style renderer (M4, planned)
+## keisuke-okb/MID2BAR-Player — JOYSOUND-style renderer (M4)
 
 ```bash
 cd third_party
 git clone --depth 1 https://github.com/keisuke-okb/MID2BAR-Player.git
 ```
 
-LRC format & headless run notes are in `../MEMORY.md`. To run headlessly on
-Linux, set `SDL_VIDEODRIVER=dummy`.
+Render venv (Pygame + opencv + the rest of MID2BAR's runtime; mic/GUI deps
+are stubbed at call time by `scripts/render_mp4.py`, so we skip
+`customtkinter` and the system-level PortAudio that `sounddevice` would
+want):
+
+```bash
+python3 -m venv ~/venvs/karaoke-jp-render
+~/venvs/karaoke-jp-render/bin/pip install \
+  'pygame>2.6' Pillow numpy pandas py_midicsv mido \
+  opencv-python chardet tqdm
+```
+
+Headless invocation: `SDL_VIDEODRIVER=dummy` (no X11/Wayland needed). LRC
+format reverse-engineering + render notes are in `../MEMORY.md`.
 
 ## Lyrics venv (M3) — independent of third_party but worth pinning here
 
