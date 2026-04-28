@@ -104,8 +104,9 @@ rule align:
         f"--aligned-out {{output.aligned:q}} --lrc-out {{output.lrc:q}}"
 
 
-# M4 stages run in the main venv (mido) and the render venv (Pygame +
-# MID2BAR-Player tree). Same `:q` discipline as above.
+# M4 stages: lrc/marker prep run in the main venv (mido lives there), and
+# the actual render runs in the dedicated MID2BAR venv (Pygame + opencv).
+MAIN_PY = "~/venvs/karaoke-jp/bin/python"
 RENDER_PY = "~/venvs/karaoke-jp-render/bin/python"
 
 
@@ -116,7 +117,7 @@ rule export_lrc:
     output:
         lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
     shell:
-        "python scripts/export_lrc.py {input.aligned:q} -o {output.lrc:q}"
+        f"{MAIN_PY} scripts/export_lrc.py {{input.aligned:q}} -o {{output.lrc:q}}"
 
 
 rule midi_markers:
@@ -127,8 +128,8 @@ rule midi_markers:
     output:
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
     shell:
-        "python scripts/add_midi_markers.py "
-        "--midi {input.midi:q} --aligned {input.aligned:q} --out {output.midi:q}"
+        f"{MAIN_PY} scripts/add_midi_markers.py "
+        f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} --out {{output.midi:q}}"
 
 
 rule render:
