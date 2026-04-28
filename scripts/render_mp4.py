@@ -108,6 +108,11 @@ def _press_space_after_init() -> None:
               help="MID2BAR-flavored .lrc (centiseconds + @RubyN= header).")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True,
               help="output karaoke.mp4 path.")
+@click.option("--background", "bg_path", type=click.Path(exists=True, dir_okay=False),
+              default=None,
+              help="Background image (.png/.jpg) or video (.mp4/.webm). PNG/JPG "
+                   "is auto-converted to a 5s looping mp4 via ffmpeg. Default: "
+                   "MID2BAR's bundled blue gradient.")
 @click.option("--lrc-settings", "lrc_settings_path", type=click.Path(exists=True, dir_okay=False),
               default=None, help="path to lyrics_settings/settings_default.json (default: bundled).")
 @click.option("--app-settings", "app_settings_path", type=click.Path(exists=True, dir_okay=False),
@@ -119,6 +124,7 @@ def main(
     midi_path: str,
     lrc_path: str,
     out_path: str,
+    bg_path: str | None,
     lrc_settings_path: str | None,
     app_settings_path: str | None,
     assets_json_path: str | None,
@@ -145,6 +151,42 @@ def main(
     lrc_abs = str(Path(lrc_path).resolve())
     out_abs = str(Path(out_path).resolve())
     Path(out_abs).parent.mkdir(parents=True, exist_ok=True)
+
+    # Background normalization: yt-dlp often hands back AV1-encoded mp4 that
+    # OpenCV's bundled cv2.VideoCapture cannot decode (no software AV1
+    # support), so we always re-encode to h264 + yuv420p + 1920x1080 before
+    # handing to MID2BAR. Static images are fed to ffmpeg with -loop 1
+    # for a 5s mp4 that MID2BAR's loop-back will keep restarting.
+    bg_abs = None
+    if bg_path:
+        import subprocess
+        src = Path(bg_path).resolve()
+        ext = src.suffix.lower()
+        converted = Path(out_abs).parent / "_background.mp4"
+        if ext in {".mp4", ".webm", ".mov", ".mkv"}:
+            cmd = [
+                "ffmpeg", "-y", "-i", str(src),
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an",
+                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
+                       "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                str(converted),
+            ]
+        elif ext in {".png", ".jpg", ".jpeg", ".webp"}:
+            cmd = [
+                "ffmpeg", "-y", "-loop", "1", "-i", str(src),
+                "-t", "5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
+                       "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+                str(converted),
+            ]
+        else:
+            raise click.UsageError(
+                f"Unsupported background format: {ext}. "
+                "Use .mp4/.webm/.mov/.mkv or .png/.jpg/.jpeg/.webp."
+            )
+        print(f"[render] normalizing bg -> {converted}", flush=True)
+        subprocess.run(cmd, check=True, capture_output=True)
+        bg_abs = str(converted)
 
     sys.path.insert(0, str(MID2BAR_DIR))
     os.chdir(MID2BAR_DIR)
@@ -189,8 +231,9 @@ def main(
         mid_path=midi_abs,
         lrc_path=lrc_abs,
         lrc_settings_path=lrc_settings_path,
-        video_paths=[],  # no background video; MID2BAR's bundled samples
-                          # would otherwise loop a colored shape.
+        # If the user provided a background mp4 (or PNG converted above),
+        # loop it; otherwise leave blank for MID2BAR's bundled blue gradient.
+        video_paths=[bg_abs] if bg_abs else [],
         video_fixed_fps=0,
         video_shuffle=False,
         # MID2BAR's __init__ does `os.path.exists(splash_image)` without a
