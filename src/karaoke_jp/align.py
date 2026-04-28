@@ -103,6 +103,46 @@ def text_to_kana_units(text: str, tagger) -> list[KanaUnit]:
     return out
 
 
+def _surface_to_kana_text(surface: str, tagger) -> str:
+    out = []
+    for word in tagger(surface):
+        word_surface = word.surface
+        if not word_surface or word_surface.isspace() or word_surface == "　":
+            continue
+        out.append(_read_kana(word.feature) or word_surface)
+    return "".join(out)
+
+
+def lyrics_tokens_to_kana_units(lyrics_lines: list[dict], tagger=None) -> list[KanaUnit]:
+    """Build kana units directly from tokenized lyrics.
+
+    This preserves per-song override readings already baked into
+    ``tokens.json``. Re-tokenizing the flattened lyrics text with fugashi
+    would discard those overrides and can reintroduce heteronym mistakes
+    such as ``下 -> もと`` in contexts where the song actually sings ``した``.
+    """
+    out: list[KanaUnit] = []
+    src_pos = 0
+    for line in lyrics_lines:
+        for tok in line["tokens"]:
+            surface = tok["surface"]
+            real_surface = "".join(ch for ch in surface if not ch.isspace() and ch != "　")
+            if not real_surface:
+                continue
+
+            reading = tok.get("reading")
+            if reading:
+                kana_hira = kata_to_hira(reading)
+            else:
+                kana_hira = _surface_to_kana_text(surface, tagger) if tagger else real_surface
+
+            src_end = src_pos + len(real_surface)
+            for kc in kana_hira:
+                out.append(KanaUnit(kana=kc, src_start=src_pos, src_end=src_end))
+            src_pos = src_end
+    return out
+
+
 def asr_chars_to_kana_units(asr_chars: list[AsrChar], tagger) -> list[KanaUnit]:
     """Same as ``text_to_kana_units`` but each kana also gets a time slice
     interpolated within its originating surface span."""
