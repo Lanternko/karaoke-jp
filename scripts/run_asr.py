@@ -11,6 +11,42 @@ from pathlib import Path
 import click
 
 
+def is_hallucinated_segment(text: str) -> bool:
+    """Return True if ``text`` looks like a Whisper repetition hallucination.
+
+    Two independent signals — either one fires:
+
+    1. **Char-entropy collapse**: long text with a tiny set of unique chars
+       (e.g. "ねえねえねえ..." has 2 unique / 280 = 0.007).
+    2. **N-gram run**: any 2- or 3-char substring repeats consecutively ≥ 10
+       times (catches "ラララララ..." even when 1-gram entropy is low but
+       above the char-entropy threshold once stripped of spaces).
+
+    Both thresholds are slack enough to spare normal lyrics: Japanese verse
+    lines are <30 chars so the entropy check is gated on length, and chorus
+    repeats like "きらりきらり" or "ずっと ずっと" cap at 2 consecutive
+    runs (well under 10).
+    """
+    stripped = "".join(text.split())  # drop spaces / newlines / 全角空白
+    if len(stripped) >= 30:
+        unique_ratio = len(set(stripped)) / len(stripped)
+        if unique_ratio < 0.15:
+            return True
+    for n in (2, 3):
+        i = 0
+        while i + n <= len(stripped):
+            ngram = stripped[i : i + n]
+            run = 1
+            j = i + n
+            while j + n <= len(stripped) and stripped[j : j + n] == ngram:
+                run += 1
+                j += n
+            if run >= 10:
+                return True
+            i += 1
+    return False
+
+
 @click.command()
 @click.argument("vocals_path", type=click.Path(exists=True, dir_okay=False))
 @click.option("--out", "-o", "out_path", type=click.Path(dir_okay=False), required=True)
@@ -77,7 +113,17 @@ def main(
     )
 
     out: list[dict] = []
+    dropped: list[dict] = []
     for seg in segments:
+        if is_hallucinated_segment(seg.text):
+            dropped.append(
+                {
+                    "start": round(seg.start, 3),
+                    "end": round(seg.end, 3),
+                    "text": seg.text[:80],
+                }
+            )
+            continue
         words = []
         if seg.words:
             for w in seg.words:
@@ -122,6 +168,13 @@ def main(
         f"lang={info.language} (p={info.language_probability:.3f}) -> {out_path}",
         flush=True,
     )
+    if dropped:
+        print(
+            f"dropped {len(dropped)} hallucinated segment(s):",
+            flush=True,
+        )
+        for d in dropped:
+            print(f"  {d['start']:7.2f}-{d['end']:7.2f}  {d['text']!r}", flush=True)
 
 
 if __name__ == "__main__":
