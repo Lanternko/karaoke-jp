@@ -6,6 +6,9 @@ JOYSOUND 風日式卡拉 OK 影片自動生成器。**個人練唱用，不要�
 
 完整設計、決策歷史、踩坑記錄分別在 [spec.md](spec.md) / [MEMORY.md](MEMORY.md) / [CLAUDE.md](CLAUDE.md)。
 
+![Uploading image.png…]()
+
+
 ## 重要：版權與使用範圍
 
 - 僅限**個人練唱自用**。日本著作權法第 30 條私的使用允許自用 reproduction
