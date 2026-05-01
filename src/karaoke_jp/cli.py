@@ -49,13 +49,28 @@ def separate(input_path: str, out_dir: str, model: str | None, device: str) -> N
 )
 @click.option(
     "--backend",
-    type=click.Choice(["rmvpe", "some"]),
+    type=click.Choice(["rmvpe", "some", "cectc"]),
     default="rmvpe",
     show_default=True,
-    help="Pitch extraction backend.",
+    help="Pitch extraction backend. cectc = direct CTC+CE note transcription "
+    "(requires --instrumental).",
 )
-def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int, backend: str) -> None:
-    """M2: Vocals -> melody MIDI via RMVPE or SOME."""
+@click.option(
+    "--instrumental",
+    "instrumental_path",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Instrumental WAV. Required for backend=cectc.",
+)
+def melody(
+    vocals_path: str,
+    midi_path: str,
+    tempo: float,
+    cuda_device: int,
+    backend: str,
+    instrumental_path: str | None,
+) -> None:
+    """M2: Vocals -> melody MIDI via RMVPE, SOME, or CTC+CE."""
     from .melody import extract_midi
 
     extract_midi(
@@ -63,6 +78,7 @@ def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int, bac
         midi_path,
         tempo=tempo,
         backend=backend,
+        instrumental_path=instrumental_path,
         cuda_device=None if cuda_device < 0 else cuda_device,
     )
 

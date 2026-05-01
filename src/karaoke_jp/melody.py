@@ -26,6 +26,16 @@ DEFAULT_RMVPE_CKPT = DEFAULT_SOME_DIR / "pretrained" / "rmvpe" / "model.pt"
 DEFAULT_SOME_PYTHON = Path.home() / "venvs" / "karaoke-jp-melody" / "bin" / "python"
 DEFAULT_RMVPE_SCRIPT = PROJECT_ROOT / "scripts" / "extract_rmvpe_f0.py"
 
+DEFAULT_CECTC_DIR = PROJECT_ROOT / "third_party" / "CTC_CE_for_AST"
+DEFAULT_CECTC_CKPT = (
+    DEFAULT_CECTC_DIR / "pretrained" / "CTC_CE_for_AST" / "ctc_ce#3_98" / "ctc_ce#3_98"
+)
+DEFAULT_CECTC_YAML = (
+    DEFAULT_CECTC_DIR / "pretrained" / "CTC_CE_for_AST" / "ctc_ce#3_98" /
+    "inference_ce_ctc#3_98.yaml"
+)
+DEFAULT_CECTC_SCRIPT = PROJECT_ROOT / "scripts" / "run_cectc_inference.py"
+
 
 @dataclass(frozen=True)
 class Run:
@@ -367,22 +377,67 @@ def _infer_rmvpe_f0(
         tmp_path.unlink(missing_ok=True)
 
 
+def _extract_midi_with_cectc(
+    vocals_path: Path,
+    instrumental_path: Path,
+    midi_path: Path,
+    *,
+    cectc_python: Path,
+    cectc_script: Path,
+    cectc_ckpt: Path,
+    cectc_yaml: Path,
+    cuda_device: int | None,
+) -> Path:
+    if not cectc_ckpt.exists():
+        raise FileNotFoundError(
+            f"CTC+CE checkpoint not found at {cectc_ckpt}. "
+            "Run: gdown --folder https://drive.google.com/drive/folders/"
+            "1lxq-IF83cEXE8XsTFywNJhwtDSRXWqRx (ctc_ce#3_98 subdir)."
+        )
+    if not cectc_yaml.exists():
+        raise FileNotFoundError(cectc_yaml)
+    if not cectc_script.exists():
+        raise FileNotFoundError(cectc_script)
+    device = "cpu" if cuda_device is None else f"cuda:{cuda_device}"
+    cmd = [
+        str(cectc_python),
+        str(cectc_script),
+        "--vocals", str(vocals_path),
+        "--instrumental", str(instrumental_path),
+        "--midi", str(midi_path),
+        "--model", str(cectc_ckpt),
+        "--yaml", str(cectc_yaml),
+        "--device", device,
+    ]
+    subprocess.run(cmd, env=_build_child_env(cuda_device), check=True)
+    return midi_path
+
+
 def extract_midi(
     vocals_path: str | Path,
     midi_path: str | Path,
     *,
     tempo: float = 120.0,
     backend: str = "rmvpe",
+    instrumental_path: str | Path | None = None,
     some_dir: Path | None = None,
     some_ckpt: Path | None = None,
     rmvpe_ckpt: Path | None = None,
     some_python: Path | None = None,
+    cectc_ckpt: Path | None = None,
+    cectc_yaml: Path | None = None,
+    cectc_script: Path | None = None,
     cuda_device: int | None = 0,
     min_note_duration: float = 0.08,
     max_gap_duration: float = 0.05,
     pitch_tolerance: float = 0.75,
 ) -> Path:
-    """Extract a melody MIDI from ``vocals_path``."""
+    """Extract a melody MIDI from ``vocals_path``.
+
+    ``backend="cectc"`` runs Wang & Jang's CTC+CE direct note transcription
+    (TASLP 2023). It additionally requires ``instrumental_path`` because the
+    model's input is the 6-channel CQT of (vocal, vocal+instrumental).
+    """
     vocals_path = Path(vocals_path).resolve()
     if not vocals_path.is_file():
         raise FileNotFoundError(vocals_path)
@@ -397,8 +452,28 @@ def extract_midi(
 
     if not some_python.exists():
         raise FileNotFoundError(
-            f"SOME python interpreter not found at {some_python}. "
+            f"Melody python interpreter not found at {some_python}. "
             "Set up ~/venvs/karaoke-jp-melody (see README)."
+        )
+
+    if backend == "cectc":
+        if instrumental_path is None:
+            raise ValueError(
+                "backend='cectc' requires instrumental_path "
+                "(model needs vocal+instrumental CQT pair)."
+            )
+        instrumental_path = Path(instrumental_path).resolve()
+        if not instrumental_path.is_file():
+            raise FileNotFoundError(instrumental_path)
+        return _extract_midi_with_cectc(
+            vocals_path,
+            instrumental_path,
+            midi_path,
+            cectc_python=some_python,
+            cectc_script=cectc_script or DEFAULT_CECTC_SCRIPT,
+            cectc_ckpt=cectc_ckpt or DEFAULT_CECTC_CKPT,
+            cectc_yaml=cectc_yaml or DEFAULT_CECTC_YAML,
+            cuda_device=cuda_device,
         )
 
     if backend == "some":
