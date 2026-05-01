@@ -137,8 +137,14 @@ def _retime_unsung_chars(chars: list[dict]) -> None:
 def _allocate_notes(
     notes: list[tuple[float, float, int]],
     hints: list[float],
-) -> list[tuple[float, float]]:
-    """Return one (start, end) span per hint via greedy monotone matching.
+) -> tuple[list[tuple[float, float]], int]:
+    """Return (spans, last_consumed_idx).
+
+    spans: one (start, end) per hint via greedy monotone matching.
+    last_consumed_idx: index into ``notes`` of the last note actually used,
+    or -1 if no notes were consumed. Callers use this to advance a cursor
+    past every note this allocation touched (the n_n >= n_h path may skip
+    notes via ``max_skip``, so chosen[-1] can exceed n_h - 1).
 
     When notes >= hints: each hint picks the closest available note while
     keeping enough notes for remaining hints. End time is capped at the
@@ -151,9 +157,9 @@ def _allocate_notes(
     n_h = len(hints)
     n_n = len(notes)
     if n_h == 0:
-        return []
+        return [], -1
     if n_n == 0:
-        return [(h, h) for h in hints]
+        return [(h, h) for h in hints], -1
 
     if n_n >= n_h:
         chosen: list[int] = []
@@ -180,7 +186,7 @@ def _allocate_notes(
             else:
                 end = off
             spans.append((on, end))
-        return spans
+        return spans, chosen[-1]
 
     per = n_h / n_n
     note_idxs = [min(int(i / per), n_n - 1) for i in range(n_h)]
@@ -201,7 +207,7 @@ def _allocate_notes(
             e = on + sp * (offset + 1) / group
             spans.append((s, e))
         i = j
-    return spans
+    return spans, n_n - 1
 
 
 # ---------------------------------------------------------------------------
@@ -339,11 +345,15 @@ def apply_mora_timing(
             continue
 
         hints = [m["hint"] for m in morae]
-        spans = _allocate_notes(line_notes, hints)
+        spans, last_rel = _allocate_notes(line_notes, hints)
         _writeback_char_timings(morae, spans)
         total_notes += min(len(line_notes), len(morae))
         updated += 1
-        cursor = lo + min(len(line_notes), len(morae))
+        # Advance past the last note actually consumed. The n_n >= n_h
+        # branch can skip notes via max_skip, so chosen[-1] may exceed
+        # len(morae) - 1; using min(...) here would let the next line's
+        # window re-include notes already used.
+        cursor = lo + last_rel + 1
 
     _retime_lines_after_char_update(lines)
     return updated, total_morae, total_notes
@@ -375,7 +385,7 @@ def apply_char_timing(
         return 0, len(lines)
 
     hints = [ch["start"] for _, ch in flat]
-    spans = _allocate_notes(notes, hints)
+    spans, _ = _allocate_notes(notes, hints)
     for (_line, ch_dict), (s, e) in zip(flat, spans, strict=True):
         ch_dict["start"] = round(s, 3)
         ch_dict["end"] = round(e, 3)
