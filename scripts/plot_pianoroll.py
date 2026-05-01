@@ -18,23 +18,28 @@ import mido
 def collect_notes(midi_path: Path) -> list[tuple[float, float, int]]:
     mid = mido.MidiFile(midi_path)
     tempo = 500_000  # default 120 bpm in microseconds per beat
-    for msg in mid.tracks[0]:
-        if msg.type == "set_tempo":
-            tempo = msg.tempo
-            break
+    for track in mid.tracks:
+        for msg in track:
+            if msg.type == "set_tempo":
+                tempo = msg.tempo
+                break
+        else:
+            continue
+        break
 
     sec_per_tick = tempo / 1_000_000 / mid.ticks_per_beat
     notes = []
-    pending: dict[int, float] = {}
-    abs_tick = 0
-    for msg in mid.tracks[0]:
-        abs_tick += msg.time
-        t = abs_tick * sec_per_tick
-        if msg.type == "note_on" and msg.velocity > 0:
-            pending[msg.note] = t
-        elif msg.type in {"note_off", "note_on"} and msg.note in pending:
-            start = pending.pop(msg.note)
-            notes.append((start, t, msg.note))
+    for track in mid.tracks:
+        pending: dict[int, float] = {}
+        abs_tick = 0
+        for msg in track:
+            abs_tick += msg.time
+            t = abs_tick * sec_per_tick
+            if msg.type == "note_on" and msg.velocity > 0:
+                pending[msg.note] = t
+            elif msg.type in {"note_off", "note_on"} and msg.note in pending:
+                start = pending.pop(msg.note)
+                notes.append((start, t, msg.note))
     return notes
 
 

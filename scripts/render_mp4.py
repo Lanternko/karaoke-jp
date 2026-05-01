@@ -99,6 +99,43 @@ def _press_space_after_init() -> None:
     pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))
 
 
+def _disable_particles(app) -> None:
+    """Suppress MID2BAR's sparkle/glitter particles.
+
+    MID2BAR's ``update_particles()`` (app.py:1249) reassigns the three particle
+    lists every frame to whatever ``_update_particle_list`` returns. So
+    swapping the lists for a NullList only survives one frame — by frame 2
+    the lists are vanilla lists again and the for-loop draws sparkles.
+    Patch the actual update method instead: lambda always returns ``[]``,
+    which clears the list AND skips every ``p.update()`` / ``p.draw()`` call.
+
+    Sources of sparkle particles in app.py:
+      - line 777, 1068: note-pass ``Particle`` (general kira-kira)
+      - line 790, 1049: ``MicInputParticle`` (mic-input glow; we never have mic)
+      - line 897-924, 1181-1207: ``bar_count_particles`` for stat counter pops
+    """
+    app._update_particle_list = lambda particle_list, screen: []
+
+
+def _hide_minmax_columns(app) -> None:
+    """Hide the BAR_COUNT min/max counter columns (and their animation popups).
+
+    ``draw_bar_count`` (app.py:1500-1530) blits 3 fixed-position digits:
+    normal, max, min — followed by a loop over up/down/long. Settings'
+    BAR_COUNT_DICT controls position and color. Frozen dataclass blocks
+    attribute reassignment, but the inner dict is mutable, so we replace
+    the max/min dict entries with off-screen positions.
+    """
+    BarCountEntry = type(app.s.BAR_COUNT_DICT["max"])
+    AnimationEntry = type(app.s.BAR_PASSED_COUNT_ANIMATION_DICT["max"])
+    OFF = (-9999, -9999)
+    for k in ("max", "min"):
+        bc = app.s.BAR_COUNT_DICT[k]
+        app.s.BAR_COUNT_DICT[k] = BarCountEntry(pos=OFF, color=bc.color)
+        an = app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k]
+        app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k] = AnimationEntry(pos=OFF, colors=an.colors)
+
+
 @click.command()
 @click.option("--audio", "audio_path", type=click.Path(exists=True, dir_okay=False), required=True,
               help="instrumental.wav for playback (audio mux into output mp4).")
@@ -258,6 +295,8 @@ def main(
         assets_json_path=assets_json_path,
     )
 
+    _disable_particles(app)
+    _hide_minmax_columns(app)
     _press_space_after_init()
     app.run()
     print(f"[render] mp4 written to {out_abs}", flush=True)

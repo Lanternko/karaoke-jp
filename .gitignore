@@ -27,6 +27,8 @@ outputs/
 *.mkv
 *.mid
 *.midi
+!songs/*/score.mid
+!songs/*/omr_seed/*.mid
 
 # Background images may stay (small)
 !songs/*/background.png
@@ -51,3 +53,14 @@ Thumbs.db
 third_party/*
 !third_party/.gitkeep
 !third_party/README.md
+
+# Local OMR scratch space
+tmp/.venv-omr/
+tmp/codex_cache_*/
+tmp/codex_cache_sheet.jpg
+tmp/pipmeta/
+tmp/aina-kakumei/*.html
+tmp/aina-kakumei/*.bin
+tmp/aina-kakumei/*.mid
+tmp/aina-kakumei/*.mrc
+tmp/aina-kakumei/mymusic5/

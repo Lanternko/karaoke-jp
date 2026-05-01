@@ -35,6 +35,34 @@ YouTube URL
 Each stage is a Snakemake rule. Cache-friendly: changing code only re-runs
 downstream of what changed.
 
+## Score-first melody (piano-only cover)
+
+If you already have a trustworthy score, do **not** ask RMVPE / BasicPitch to
+guess the melody from polyphonic piano audio. Use the score as pitch ground
+truth and let audio decide timing only.
+
+```bash
+# 1. Install the DTW alignment extra in the main venv
+~/venvs/karaoke-jp/bin/pip install -e '.[score]'
+
+# 2. Export the score as MIDI
+#    For true pitch-perfect output, export the melody staff / melody-only MIDI.
+#    A full piano MIDI can still use --top-voice, but that is best-effort.
+
+# 3. Align score MIDI to the piano recording
+~/venvs/karaoke-jp/bin/karaoke-jp score-melody \
+  songs/<song-id>/source.wav \
+  --score-midi songs/<song-id>/score.mid \
+  -o outputs/<song-id>/melody.mid
+```
+
+Useful flags:
+
+- `--top-voice` (default): best-effort highest note per onset, useful when the
+  exported score MIDI still contains both hands.
+- `--all-notes`: keep the full score MIDI after DTW timing alignment.
+- `--tempo 93`: force the tempo metadata embedded in `melody.mid`.
+
 ## One-command end-to-end (after setup)
 
 ```bash

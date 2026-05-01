@@ -49,13 +49,28 @@ def separate(input_path: str, out_dir: str, model: str | None, device: str) -> N
 )
 @click.option(
     "--backend",
-    type=click.Choice(["rmvpe", "some"]),
+    type=click.Choice(["rmvpe", "some", "cectc"]),
     default="rmvpe",
     show_default=True,
-    help="Pitch extraction backend.",
+    help="Pitch extraction backend. cectc = direct CTC+CE note transcription "
+    "(requires --instrumental).",
 )
-def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int, backend: str) -> None:
-    """M2: Vocals -> melody MIDI via RMVPE or SOME."""
+@click.option(
+    "--instrumental",
+    "instrumental_path",
+    type=click.Path(exists=True, dir_okay=False),
+    default=None,
+    help="Instrumental WAV. Required for backend=cectc.",
+)
+def melody(
+    vocals_path: str,
+    midi_path: str,
+    tempo: float,
+    cuda_device: int,
+    backend: str,
+    instrumental_path: str | None,
+) -> None:
+    """M2: Vocals -> melody MIDI via RMVPE, SOME, or CTC+CE."""
     from .melody import extract_midi
 
     extract_midi(
@@ -63,7 +78,73 @@ def melody(vocals_path: str, midi_path: str, tempo: float, cuda_device: int, bac
         midi_path,
         tempo=tempo,
         backend=backend,
+        instrumental_path=instrumental_path,
         cuda_device=None if cuda_device < 0 else cuda_device,
+    )
+
+
+@main.command("score-melody")
+@click.argument("audio_path", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--score-midi",
+    type=click.Path(exists=True, dir_okay=False),
+    required=True,
+    help="Score MIDI used as pitch ground truth and DTW alignment reference.",
+)
+@click.option(
+    "--out",
+    "-o",
+    "midi_path",
+    type=click.Path(dir_okay=False),
+    required=True,
+    help="Output melody.mid path.",
+)
+@click.option(
+    "--tempo",
+    default=None,
+    type=float,
+    help="Tempo embedded in the output MIDI. Defaults to the first score tempo marker.",
+)
+@click.option(
+    "--top-voice/--all-notes",
+    default=True,
+    show_default=True,
+    help="Emit a best-effort top voice from the score, or keep every score note.",
+)
+@click.option(
+    "--sample-rate",
+    default=22050,
+    type=int,
+    show_default=True,
+    help="Audio sample rate used for chroma extraction.",
+)
+@click.option(
+    "--hop-length",
+    default=1024,
+    type=int,
+    show_default=True,
+    help="Hop length used for score/audio chroma DTW.",
+)
+def score_melody(
+    audio_path: str,
+    score_midi: str,
+    midi_path: str,
+    tempo: float | None,
+    top_voice: bool,
+    sample_rate: int,
+    hop_length: int,
+) -> None:
+    """M2-score: score MIDI pitch + piano audio timing via chroma DTW."""
+    from .score_melody import extract_score_aligned_melody
+
+    extract_score_aligned_melody(
+        audio_path,
+        score_midi,
+        midi_path,
+        top_voice=top_voice,
+        sample_rate=sample_rate,
+        hop_length=hop_length,
+        tempo=tempo,
     )
 
 

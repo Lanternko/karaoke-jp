@@ -10,10 +10,17 @@
 #      PATH or which venv they activated first.
 
 import glob
+import os
 from pathlib import Path
 
 SONGS_DIR = Path("songs")
 OUT_DIR = Path("outputs")
+
+# Set MELODY_BACKEND=cectc to use direct CTC+CE note transcription
+# (Wang & Jang TASLP 2023). Default rmvpe = frame-level F0 + heuristic
+# segmentation. cectc skips segment_f0_to_notes entirely; preferred for
+# low-register vocals where RMVPE octave-halving bites.
+MELODY_BACKEND = os.environ.get("MELODY_BACKEND", "rmvpe")
 
 # Discover song IDs by scanning songs/<id>/source.* present.
 SONG_IDS = sorted(
@@ -44,7 +51,9 @@ KARAOKE_BIN = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "karaoke-jp")
 MAIN_PY = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "python")
 LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
-LRC_BLOCK_SIZE = 2
+LRC_BLOCK_SIZE = 2  # 2 phrases per lyric block → MID2BAR alternates row 2/3 (上下)
+QUARTERS_PER_PAGE = 8  # bar-display fixed scale: 8 quarter notes per page → ≈5s @ 96 BPM
+VOCAL_RATIO = 0.30  # guide-vocal level in mixed.wav
 MID2BAR_APP_SETTINGS = str(Path("config") / "mid2bar_settings.json")
 
 
@@ -79,15 +88,36 @@ rule separate:
 
 
 rule melody:
-    """M2: vocals -> melody MIDI via RMVPE F0 + local note segmentation."""
+    """M2: vocals -> melody MIDI. Backend chosen by MELODY_BACKEND env var
+    (default rmvpe; set to cectc for direct note transcription)."""
     input:
         vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+        instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody.mid"),
-    resources:
-        gpu=1,
+    params:
+        backend=MELODY_BACKEND,
     shell:
-        f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}} --backend rmvpe"
+        f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}} "
+        f"--backend {{params.backend}} --instrumental {{input.instrumental:q}}"
+
+
+rule quantize_melody:
+    """M2b: snap note durations to {8th, quarter, half} of the beat grid
+    estimated from instrumental.wav. Pitch + onset preserved verbatim;
+    only the offset is moved to the closest musical-unit duration. Also
+    writes a sidecar `<midi>.bpm.txt` so downstream rules can use the BPM."""
+    input:
+        midi=str(OUT_DIR / "{song}" / "melody.mid"),
+        instrumental=str(OUT_DIR / "{song}" / "instrumental.wav"),
+    output:
+        midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
+        bpm=str(OUT_DIR / "{song}" / "melody_quantized.mid.bpm.txt"),
+    shell:
+        f"{Path.home() / 'venvs' / 'karaoke-jp-melody' / 'bin' / 'python'} "
+        f"scripts/quantize_durations.py "
+        f"--midi {{input.midi:q}} --instrumental {{input.instrumental:q}} "
+        f"--out {{output.midi:q}}"
 
 
 rule tokenize:
@@ -145,7 +175,7 @@ rule midi_timing:
     """
     input:
         aligned=str(OUT_DIR / "{song}" / "aligned.json"),
-        midi=str(OUT_DIR / "{song}" / "melody.mid"),
+        midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
     output:
         aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.json"),
     shell:
@@ -171,16 +201,18 @@ rule export_lrc:
 
 
 rule midi_markers:
-    """M4b: melody.mid + aligned_midi.json -> melody_markers.mid (page boundaries)."""
+    """M4b: melody_quantized.mid -> melody_markers.mid (page boundaries
+    every QUARTERS_PER_PAGE quarter notes for fixed pixels-per-quarter)."""
     input:
-        midi=str(OUT_DIR / "{song}" / "melody.mid"),
-        aligned=str(OUT_DIR / "{song}" / "aligned_midi.json"),
+        midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
+        bpm=str(OUT_DIR / "{song}" / "melody_quantized.mid.bpm.txt"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
     shell:
         f"{MAIN_PY} scripts/add_midi_markers.py "
-        f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} --out {{output.midi:q}} "
-        f"--block-size {LRC_BLOCK_SIZE}"
+        f"--midi {{input.midi:q}} --out {{output.midi:q}} "
+        f"--mode beat --bpm-file {{input.bpm:q}} "
+        f"--quarters-per-page {QUARTERS_PER_PAGE}"
 
 
 rule mix:
@@ -199,7 +231,7 @@ rule mix:
     shell:
         f"{MAIN_PY} scripts/mix_audio.py "
         f"--instrumental {{input.instrumental:q}} --vocals {{input.vocals:q}} "
-        f"--out {{output.mixed:q}} --vocal-ratio 0.20"
+        f"--out {{output.mixed:q}} --vocal-ratio {VOCAL_RATIO}"
 
 
 def _background_arg(wc):

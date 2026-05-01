@@ -36,6 +36,30 @@ python3 -m venv ~/venvs/karaoke-jp-melody
   --extra-index-url https://pypi.org/simple
 ```
 
+## york135/CTC_CE_for_AST — direct note transcription (M2 `--backend cectc`)
+
+Wang & Jang's TASLP 2023 CRNN+CTC+CE singing transcription model. Outputs
+onset/offset/pitch in one shot (no RMVPE → segmentation heuristic). Selected
+when `MELODY_BACKEND=cectc` or `karaoke-jp melody --backend cectc`.
+
+```bash
+cd third_party
+git clone --depth 1 https://github.com/york135/CTC_CE_for_AST.git
+
+# Pretrained MIR-ST500 checkpoint (3.9 MB) + tuned inference yaml.
+~/venvs/karaoke-jp-melody/bin/pip install gdown
+mkdir -p CTC_CE_for_AST/pretrained
+cd CTC_CE_for_AST/pretrained
+~/venvs/karaoke-jp-melody/bin/gdown --folder \
+  https://drive.google.com/drive/folders/1lxq-IF83cEXE8XsTFywNJhwtDSRXWqRx
+# Yields CTC_CE_for_AST/ctc_ce#3_98/{ctc_ce#3_98, inference_ce_ctc#3_98.yaml}
+```
+
+Reuses `~/venvs/karaoke-jp-melody/` (torch 2.11+cu130, librosa 0.9.2). The
+wrapper in `scripts/run_cectc_inference.py` bypasses the upstream Spleeter
+prerequisite by feeding our Demucs-separated `vocals.wav` + `instrumental.wav`
+directly into `get_all_feature(voc, acc)`.
+
 ## keisuke-okb/MID2BAR-Player — JOYSOUND-style renderer (M4)
 
 ```bash

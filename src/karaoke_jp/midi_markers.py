@@ -143,3 +143,84 @@ def inject_line_markers(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     mid.save(out_path)
     return len(page_starts) - 1  # don't count the synthetic END
+
+
+def inject_beat_markers(
+    midi_path: str | Path,
+    out_path: str | Path,
+    *,
+    bpm: float,
+    quarters_per_page: int = 8,
+) -> int:
+    """Inject ``marker`` meta-events at fixed quarter-note intervals.
+
+    Use this when you want every page on the bar display to render at the
+    same pixels-per-quarter scale (instead of phrase-stretching). Each page
+    spans exactly ``quarters_per_page`` quarter notes — at 95.7 BPM with
+    quarters_per_page=8 that's about 5.0 seconds per page.
+
+    Lyrics layout is unaffected: it reads from the .lrc file directly, not
+    from MIDI markers. So the page boundaries here only control the bar
+    area's visual scale.
+    """
+    midi_path = Path(midi_path)
+    out_path = Path(out_path)
+    if bpm <= 0:
+        raise ValueError(f"bpm must be positive, got {bpm}")
+
+    mid = mido.MidiFile(midi_path)
+
+    tempo_us = 500_000
+    for msg in mid.tracks[0]:
+        if msg.type == "set_tempo":
+            tempo_us = msg.tempo
+            break
+
+    has_ts = any(
+        msg.type == "time_signature" for tr in mid.tracks for msg in tr
+    )
+    if not has_ts:
+        ts_msg = mido.MetaMessage(
+            "time_signature",
+            numerator=4, denominator=4,
+            clocks_per_click=24, notated_32nd_notes_per_beat=8,
+            time=0,
+        )
+        mid.tracks[0].insert(0, ts_msg)
+
+    # Determine song duration: scan note offsets across tracks.
+    song_end_s = 0.0
+    for tr in mid.tracks:
+        abs_tick = 0
+        for msg in tr:
+            abs_tick += msg.time
+            if msg.type in {"note_on", "note_off"}:
+                t = mido.tick2second(abs_tick, mid.ticks_per_beat, tempo_us)
+                if t > song_end_s:
+                    song_end_s = t
+    if song_end_s <= 0:
+        raise ValueError(f"Could not determine song duration from {midi_path}")
+
+    seconds_per_quarter = 60.0 / bpm
+    seconds_per_page = quarters_per_page * seconds_per_quarter
+
+    n_pages = int(song_end_s // seconds_per_page) + 1
+    page_starts: list[tuple[float, str]] = []
+    for i in range(n_pages):
+        page_starts.append((i * seconds_per_page, f"P{i + 1:02d}"))
+    # Synthetic END marker so MID2BAR's last-page logic has somewhere to land.
+    page_starts.append((song_end_s + 1.0, "END"))
+
+    marker_track = mido.MidiTrack()
+    prev_tick = 0
+    for t_s, label in page_starts:
+        abs_tick = _seconds_to_ticks(t_s, mid.ticks_per_beat, tempo_us)
+        delta = max(abs_tick - prev_tick, 0)
+        marker_track.append(mido.MetaMessage("marker", text=label, time=delta))
+        prev_tick = abs_tick
+    marker_track.append(mido.MetaMessage("end_of_track", time=0))
+
+    mid.tracks.append(marker_track)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    mid.save(out_path)
+    return len(page_starts) - 1

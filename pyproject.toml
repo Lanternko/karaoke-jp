@@ -35,6 +35,9 @@ render = [
     "ffmpeg-python>=0.2.0",
     # MID2BAR-Player fork dropped into third_party/ at M4
 ]
+score = [
+    "librosa>=0.10",
+]
 batch = [
     "snakemake>=8.0",
 ]
