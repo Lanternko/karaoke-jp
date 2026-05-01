@@ -57,7 +57,7 @@ LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
 LRC_BLOCK_SIZE = 2  # 2 phrases per lyric block → MID2BAR alternates row 2/3 (上下)
 QUARTERS_PER_PAGE = 8  # bar-display fixed scale: 8 quarter notes per page → ≈5s @ 96 BPM
-VOCAL_RATIO = 0.30  # guide-vocal level in mixed.wav
+VOCAL_RATIO = 0.35  # guide-vocal level in mixed.wav
 MID2BAR_APP_SETTINGS = str(Path("config") / "mid2bar_settings.json")
 
 

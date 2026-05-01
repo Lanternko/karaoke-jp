@@ -99,6 +99,19 @@ def _press_space_after_init() -> None:
     pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))
 
 
+def _zero_lag_time(app) -> None:
+    """Force LAG_TIME = 0 so pitch-bar fill matches the lyric wipe.
+
+    MID2BAR's bar-fill width is ``(current_time - LAG_TIME - note.start) /
+    duration * width`` (app.py:1012-1017), but the lyric wipe uses raw
+    current_time (app.py:1426-1433). The default LAG_TIME=0.3 is intended to
+    compensate live mic latency; in offline render it just makes bars trail
+    the wipe by 300 ms. SettingsSchema is a frozen dataclass, so go through
+    object.__setattr__ to bypass the freeze.
+    """
+    object.__setattr__(app.s, "LAG_TIME", 0.0)
+
+
 def _disable_particles(app) -> None:
     """Suppress MID2BAR's sparkle/glitter particles.
 
@@ -369,6 +382,7 @@ def main(
 
     _disable_particles(app)
     _hide_minmax_columns(app)
+    _zero_lag_time(app)
     _press_space_after_init()
     app.run()
     print(f"[render] mp4 written to {out_abs}", flush=True)
