@@ -117,6 +117,66 @@ def _disable_particles(app) -> None:
     app._update_particle_list = lambda particle_list, screen: []
 
 
+def _shrink_long_lines(
+    threshold_chars: int = 13,
+    *,
+    safe_width_px: int = 1700,
+    char_advance_factor: float = 1.30,
+    min_font_size: int = 56,
+    max_font_size: int = 78,
+) -> None:
+    """Monkey-patch lyrics.text_tools.draw_lyric_image_with_ruby so any line
+    that won't fit at the default 100 px font is rendered with a per-line
+    shrunk font.
+
+    Sidesteps MID2BAR's lack of any auto-fit logic. We do NOT mutate the
+    .lrc text (so chorus marker glyphs ＜ ＞ never appear on-screen) — we
+    flip the module's ``IS_CHORUS`` global per line and additionally
+    override ``LYRIC_CHORUS.FONT_SIZE`` to a fit-to-width value computed
+    from the line's char count, then restore everything.
+
+    Width math: each full-width JP char occupies ~ FONT_SIZE *
+    char_advance_factor pixels including kerning. Pick the largest font
+    that keeps n_chars * font * factor ≤ safe_width_px, clamped to
+    [min_font_size, max_font_size]. Default safe_width_px = 1720 = the
+    typical 1920 px screen minus 100 px margins on each side.
+    """
+    import lyrics.text_tools as tt  # noqa: E402
+
+    orig = tt.draw_lyric_image_with_ruby
+
+    def wrapper(data, settings, **kw):
+        # Count actual chars, not list lengths (some entries are list-of-list).
+        line_chars = sum(
+            len(s) for u in data.get("lyrics", []) for s in u if s
+        )
+
+        prev_is_chorus = tt.IS_CHORUS
+        # Save fields we may mutate so concurrent / sequential calls don't
+        # leak state across lines.
+        lc = settings.LYRIC_CHORUS
+        rc = settings.RUBY_CHORUS
+        prev_lc_font = lc.FONT_SIZE
+        prev_rc_font = rc.FONT_SIZE
+
+        if line_chars > threshold_chars:
+            tt.IS_CHORUS = True
+            target = int(safe_width_px / max(line_chars, 1) / char_advance_factor)
+            target = max(min_font_size, min(max_font_size, target))
+            # Proportional ruby (default ratio ~ RUBY/LYRIC = 30/80 = 0.375).
+            ruby_ratio = prev_rc_font / max(prev_lc_font, 1)
+            lc.FONT_SIZE = target
+            rc.FONT_SIZE = max(18, int(round(target * ruby_ratio)))
+        try:
+            return orig(data=data, settings=settings, **kw)
+        finally:
+            tt.IS_CHORUS = prev_is_chorus
+            lc.FONT_SIZE = prev_lc_font
+            rc.FONT_SIZE = prev_rc_font
+
+    tt.draw_lyric_image_with_ruby = wrapper
+
+
 def _hide_minmax_columns(app) -> None:
     """Hide the BAR_COUNT min/max counter columns (and their animation popups).
 
@@ -126,14 +186,20 @@ def _hide_minmax_columns(app) -> None:
     attribute reassignment, but the inner dict is mutable, so we replace
     the max/min dict entries with off-screen positions.
     """
-    BarCountEntry = type(app.s.BAR_COUNT_DICT["max"])
-    AnimationEntry = type(app.s.BAR_PASSED_COUNT_ANIMATION_DICT["max"])
     OFF = (-9999, -9999)
+    # When app_settings/settings.json overrides these dicts, settings_loader's
+    # _cast leaves the values as raw dicts instead of (frozen) dataclasses.
+    # Support both shapes so the off-screen patch works either way.
+    def _replace_pos(entry, pos, key="color"):
+        if hasattr(entry, key):
+            return type(entry)(**{**{f.name: getattr(entry, f.name) for f in __import__("dataclasses").fields(entry)}, "pos": pos})
+        return {**entry, "pos": list(pos)}
+
     for k in ("max", "min"):
         bc = app.s.BAR_COUNT_DICT[k]
-        app.s.BAR_COUNT_DICT[k] = BarCountEntry(pos=OFF, color=bc.color)
+        app.s.BAR_COUNT_DICT[k] = _replace_pos(bc, OFF)
         an = app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k]
-        app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k] = AnimationEntry(pos=OFF, colors=an.colors)
+        app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k] = _replace_pos(an, OFF, key="colors")
 
 
 @click.command()
@@ -270,6 +336,12 @@ def main(
     for _cls in (_ss.BarCountEntry, _ss.AnimationEntry):
         if not hasattr(_cls, "__getitem__"):
             _cls.__getitem__ = lambda self, key: getattr(self, key)  # type: ignore[assignment]
+
+    # Per-line font shrink for long lyric lines. Must hook into
+    # lyrics.text_tools BEFORE Mid2barPlayerApp(..) constructs (the
+    # constructor runs lrc.load_lyrics → draw_lyric_image_with_ruby
+    # one line at a time and caches each PNG to disk).
+    _shrink_long_lines(threshold_chars=14)
 
     from app import Mid2barPlayerApp
 

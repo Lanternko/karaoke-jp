@@ -1,26 +1,35 @@
-"""Replace Whisper char-level timing in aligned.json with MIDI note onsets.
+"""Replace Whisper timing in aligned.json with MIDI note onsets.
 
 Whisper word timestamps are unreliable for singing (speech-trained model,
-vowels stretched over multiple beats).  SOME's melody.mid captures the ACTUAL
-note onsets from the audio, giving us mora-precise timing anchors.
+vowels stretched over multiple beats).  SOME / RMVPE / CTC+CE backends
+emit per-note onsets that capture the ACTUAL note onsets from the audio,
+giving us mora-precise timing anchors.
 
-Algorithm
----------
-For each lyrics line (using Whisper's coarser *line* boundary as a window):
-1. Collect MIDI notes that fall inside that window (±tolerance).
-2. Greedily match one note per character using the character's existing
-   Whisper timestamp as a proximity hint (monotone left-to-right assignment).
-3. Assign: char_start = note_onset, char_end = next_char_onset | note_offset.
-4. Update token-level and line-level start/end to match.
+Algorithm (mora mode, default)
+------------------------------
+The unit of timing is the **mora** (one kana of a token's reading), not
+the surface character. A kanji compound like ``再会`` (2 chars) carries
+4 morae ``さ・い・か・い`` and consumes 4 notes; the per-char start/end
+is derived by splitting the run's morae across its kanji.
 
-Lines with no notes in the window keep their original Whisper timing.
+For each lyrics line we use Whisper's coarser line.start/end (± margin)
+as a window into the global note list, monotone-constrained against
+previous lines so within-line drift cannot leak into the next line. Each
+line's morae are greedy-monotone matched against its windowed notes,
+using the existing Whisper char start as a proximity hint.
+
+Char timings are then derived: char.start = first mora's onset,
+char.end = last mora's offset. Punctuation gets pinned to neighbouring
+sung-char boundaries.
+
+The legacy char-level matcher is reachable via ``--mode char``.
 
 Usage
 -----
     python scripts/midi_timing.py \\
         --midi   outputs/<song>/melody.mid \\
         --aligned outputs/<song>/aligned.json \\
-        --out    outputs/<song>/aligned.json  # overwrites in-place by default
+        --out    outputs/<song>/aligned.json  # overwrites in-place
 """
 from __future__ import annotations
 
@@ -34,19 +43,19 @@ import mido
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from karaoke_jp.lrc_export import split_furigana  # noqa: E402
+from karaoke_jp.ruby import kata_to_hira  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # MIDI helpers
 # ---------------------------------------------------------------------------
 
 def extract_notes(midi_path: Path) -> list[tuple[float, float, int]]:
-    """Return list of (onset_sec, offset_sec, pitch) sorted by onset.
-
-    Handles type-0 and type-1 files with a single tempo.
-    """
+    """Return list of (onset_sec, offset_sec, pitch) sorted by onset."""
     mid = mido.MidiFile(midi_path)
     tempo = 500000  # 120 BPM default
-    active: dict[int, int] = {}  # pitch -> abs_tick of note_on
+    active: dict[int, int] = {}
     events: list[tuple[float, float, int]] = []
 
     for track in mid.tracks:
@@ -70,85 +79,8 @@ def extract_notes(midi_path: Path) -> list[tuple[float, float, int]]:
 
 
 # ---------------------------------------------------------------------------
-# Matching
+# Char classification
 # ---------------------------------------------------------------------------
-
-def _match_notes_to_chars(
-    notes: list[tuple[float, float, int]],
-    whisper_times: list[float],
-) -> list[tuple[float, float]] | None:
-    """Greedy monotone assignment: one note per character.
-
-    *whisper_times*: the char's existing Whisper onset estimate, used as a
-    proximity hint for which note to pick when multiple candidates exist.
-
-    Returns None if there are no notes (caller keeps Whisper timing).
-    The returned tuples are per-char ``(start, end)`` spans. When there are
-    fewer notes than chars, multiple chars can share a note; in that case we
-    subdivide the available note duration so every char still gets a positive
-    span instead of collapsing to zero length.
-    """
-    if not notes:
-        return None
-
-    n_c = len(whisper_times)
-    if n_c == 0:
-        return []
-
-    n_n = len(notes)
-
-    if n_n >= n_c:
-        # Greedy: for each char pick the closest available note while keeping
-        # enough notes for the remaining chars.
-        chosen: list[int] = []
-        ptr = 0
-        for i, wt in enumerate(whisper_times):
-            remaining_chars = n_c - i
-            remaining_notes = n_n - ptr
-            # Maximum notes we can skip and still have enough for the rest
-            max_skip = remaining_notes - remaining_chars
-            best_j = ptr
-            best_dist = abs(notes[ptr][0] - wt)
-            for j in range(ptr + 1, ptr + max_skip + 1):
-                dist = abs(notes[j][0] - wt)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_j = j
-            chosen.append(best_j)
-            ptr = best_j + 1
-        result: list[tuple[float, float]] = []
-        for i, note_idx in enumerate(chosen):
-            note_on, note_off, _ = notes[note_idx]
-            note_end = notes[chosen[i + 1]][0] if i + 1 < len(chosen) else note_off
-            result.append((note_on, note_end))
-        return result
-
-    else:
-        # Fewer notes than chars: assign chars to notes monotonically, then
-        # subdivide each note's usable time span across its char group.
-        result: list[tuple[float, float]] = []
-        chars_per_note = n_c / n_n
-        note_idxs = [min(int(i / chars_per_note), n_n - 1) for i in range(n_c)]
-        i = 0
-        while i < n_c:
-            note_idx = note_idxs[i]
-            j = i + 1
-            while j < n_c and note_idxs[j] == note_idx:
-                j += 1
-
-            note_on, note_off, _ = notes[note_idx]
-            usable_end = notes[note_idx + 1][0] if note_idx + 1 < n_n else note_off
-            usable_end = max(usable_end, note_on)
-
-            group_size = j - i
-            span = usable_end - note_on
-            for offset in range(group_size):
-                ch_start = note_on + span * offset / group_size
-                ch_end = note_on + span * (offset + 1) / group_size
-                result.append((ch_start, ch_end))
-            i = j
-        return result
-
 
 def _is_sung_char(ch: str) -> bool:
     """Return True for lyric chars that should consume a MIDI note onset."""
@@ -160,9 +92,9 @@ def _is_sung_char(ch: str) -> bool:
 def _retime_unsung_chars(chars: list[dict]) -> None:
     """Pin punctuation / symbols to neighbouring sung-char boundaries.
 
-    These chars should stay in the output LRC body, but must not consume MIDI
-    note onsets. We therefore snap them to the closest surrounding sung-char
-    boundary so timing stays monotone after the sung chars are retimed.
+    These chars stay in the LRC body but must not consume MIDI note onsets.
+    Snap them to the closest surrounding sung-char boundary so timing stays
+    monotone after the sung chars are retimed.
     """
     sung_indices = [i for i, ch in enumerate(chars) if _is_sung_char(ch["char"])]
     if not sung_indices:
@@ -199,69 +131,284 @@ def _retime_unsung_chars(chars: list[dict]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Main logic
+# Greedy monotone allocator (shared by char + mora modes)
 # ---------------------------------------------------------------------------
 
-def apply_midi_timing(
+def _allocate_notes(
+    notes: list[tuple[float, float, int]],
+    hints: list[float],
+) -> list[tuple[float, float]]:
+    """Return one (start, end) span per hint via greedy monotone matching.
+
+    When notes >= hints: each hint picks the closest available note while
+    keeping enough notes for remaining hints. End time is capped at the
+    next chosen note's onset so a breath gap before the next hint doesn't
+    drag the wipe past the sung sustain.
+
+    When notes < hints: chars share notes; subdivide each note's usable
+    time evenly across its char group.
+    """
+    n_h = len(hints)
+    n_n = len(notes)
+    if n_h == 0:
+        return []
+    if n_n == 0:
+        return [(h, h) for h in hints]
+
+    if n_n >= n_h:
+        chosen: list[int] = []
+        ptr = 0
+        for i, ht in enumerate(hints):
+            remaining_h = n_h - i
+            remaining_n = n_n - ptr
+            max_skip = remaining_n - remaining_h
+            best_j = ptr
+            best_dist = abs(notes[ptr][0] - ht)
+            for j in range(ptr + 1, ptr + max_skip + 1):
+                d = abs(notes[j][0] - ht)
+                if d < best_dist:
+                    best_dist = d
+                    best_j = j
+            chosen.append(best_j)
+            ptr = best_j + 1
+        spans: list[tuple[float, float]] = []
+        for i, note_idx in enumerate(chosen):
+            on, off, _ = notes[note_idx]
+            if i + 1 < n_h:
+                next_on = notes[chosen[i + 1]][0]
+                end = min(off, next_on)
+            else:
+                end = off
+            spans.append((on, end))
+        return spans
+
+    per = n_h / n_n
+    note_idxs = [min(int(i / per), n_n - 1) for i in range(n_h)]
+    spans: list[tuple[float, float]] = []
+    i = 0
+    while i < n_h:
+        ni = note_idxs[i]
+        j = i + 1
+        while j < n_h and note_idxs[j] == ni:
+            j += 1
+        on, off, _ = notes[ni]
+        usable = notes[ni + 1][0] if ni + 1 < n_n else off
+        usable = max(usable, on)
+        group = j - i
+        sp = usable - on
+        for offset in range(group):
+            s = on + sp * offset / group
+            e = on + sp * (offset + 1) / group
+            spans.append((s, e))
+        i = j
+    return spans
+
+
+# ---------------------------------------------------------------------------
+# Mora mode (default)
+# ---------------------------------------------------------------------------
+
+def _split_morae_across_chars(n_morae: int, n_chars: int) -> list[int]:
+    """Even split: how many morae per char in a kanji run.
+
+    Correct for ``再会 (さい+かい)``; wrong for ``名前 (な+まえ)`` where
+    UniDic per-kanji lookup would do better. M3 v2 punt.
+    """
+    if n_chars <= 0:
+        return []
+    base = n_morae // n_chars
+    rem = n_morae % n_chars
+    return [base + (1 if i < rem else 0) for i in range(n_chars)]
+
+
+def expand_line_to_morae(line: dict) -> list[dict]:
+    """Yield mora records for one line, each carrying a back-pointer to
+    its target char dict so we can write timings back later.
+
+    A mora record looks like::
+
+        {"kana": "さ", "char": <ref to char dict in line>, "hint": <whisper start>}
+
+    Punctuation / symbols get *zero* morae (they don't consume notes).
+    """
+    morae: list[dict] = []
+    for tok in line.get("tokens", []):
+        chars = tok.get("chars") or []
+        if not chars:
+            continue
+        reading = tok.get("reading")
+        if reading and not tok.get("kana_only"):
+            segments = split_furigana(tok["surface"], kata_to_hira(reading))
+        else:
+            segments = [(tok["surface"], None, 0, len(tok["surface"]))]
+
+        for _seg_text, seg_reading, c_start, c_end in segments:
+            seg_chars = chars[c_start:c_end]
+            if not seg_chars:
+                continue
+            sung_seg_chars = [c for c in seg_chars if _is_sung_char(c["char"])]
+            if not sung_seg_chars:
+                continue
+
+            if seg_reading is None:
+                # Kana / okurigana: 1 mora per sung char.
+                for ch in sung_seg_chars:
+                    morae.append({"kana": ch["char"], "char": ch, "hint": float(ch["start"])})
+            else:
+                # Kanji run: evenly distribute reading kana across the kanji.
+                morae_seq = list(seg_reading)
+                splits = _split_morae_across_chars(len(morae_seq), len(sung_seg_chars))
+                pos = 0
+                for ch, n in zip(sung_seg_chars, splits, strict=True):
+                    if n == 0:
+                        continue
+                    for i in range(n):
+                        morae.append(
+                            {
+                                "kana": morae_seq[pos + i],
+                                "char": ch,
+                                "hint": float(ch["start"]),
+                            }
+                        )
+                    pos += n
+    return morae
+
+
+def _writeback_char_timings(
+    morae: list[dict],
+    spans: list[tuple[float, float]],
+) -> None:
+    """char.start = first mora's onset, char.end = last mora's offset."""
+    by_char: dict[int, list[tuple[float, float]]] = {}
+    for m, sp in zip(morae, spans, strict=True):
+        cid = id(m["char"])
+        by_char.setdefault(cid, []).append(sp)
+
+    seen = set()
+    for m in morae:
+        cid = id(m["char"])
+        if cid in seen:
+            continue
+        seen.add(cid)
+        sp_list = by_char[cid]
+        m["char"]["start"] = round(sp_list[0][0], 3)
+        m["char"]["end"] = round(sp_list[-1][1], 3)
+
+
+def apply_mora_timing(
     lines: list[dict],
     notes: list[tuple[float, float, int]],
-    window_margin: float = 0.4,
-) -> tuple[int, int]:
-    """Mutate *lines* in-place, replacing char-level timing with MIDI onsets.
+    margin: float = 0.4,
+) -> tuple[int, int, int]:
+    """Per-line bounded mora→note allocation.
 
-    Returns (n_lines_updated, n_lines_kept_whisper).
+    For each line we use Whisper's line.start/end (± margin) as a window
+    into the note list, monotone-constrained against previous lines.
+    Within-line drift cannot leak into the next line.
+
+    Returns (n_lines_updated, n_morae, n_notes_used).
     """
+    if not notes:
+        return 0, sum(len(expand_line_to_morae(ln)) for ln in lines), 0
+
+    note_onsets = [n[0] for n in notes]
+    n_total = len(notes)
+    cursor = 0
+    total_morae = 0
+    total_notes = 0
     updated = 0
-    kept = 0
 
     for line in lines:
-        all_chars = [
-            ch
-            for tok in line.get("tokens", [])
-            for ch in tok.get("chars", [])
-        ]
-        char_refs = [ch for ch in all_chars if _is_sung_char(ch["char"])]
+        morae = expand_line_to_morae(line)
+        if not morae:
+            continue
+        total_morae += len(morae)
 
-        if not char_refs:
+        line_start = float(line.get("start", morae[0]["hint"]))
+        line_end = float(line.get("end", morae[-1]["hint"]))
+
+        lo = cursor
+        while lo < n_total and note_onsets[lo] < line_start - margin:
+            lo += 1
+        hi = lo
+        while hi < n_total and note_onsets[hi] <= line_end + margin:
+            hi += 1
+
+        line_notes = notes[lo:hi]
+        if not line_notes:
             continue
 
-        t0 = line["start"] - window_margin
-        t1 = line["end"] + window_margin
-        window_notes = [(on, off, p) for on, off, p in notes if t0 <= on <= t1]
-
-        whisper_times = [c["start"] for c in char_refs]
-        matched = _match_notes_to_chars(window_notes, whisper_times)
-
-        if matched is None:
-            kept += 1
-            continue
-
-        # Write sung-char timing directly from the matched MIDI spans.
-        for ch_dict, (char_start, char_end) in zip(char_refs, matched, strict=False):
-            ch_dict["start"] = round(char_start, 3)
-            ch_dict["end"] = round(char_end, 3)
-
-        _retime_unsung_chars(all_chars)
-
-        # Re-derive token timing from updated chars.
-        for tok in line.get("tokens", []):
-            tok_chars = tok.get("chars", [])
-            sung_tok_chars = [c for c in tok_chars if _is_sung_char(c["char"])]
-            timing_chars = sung_tok_chars or tok_chars
-            if timing_chars:
-                tok["start"] = timing_chars[0]["start"]
-                tok["end"] = timing_chars[-1]["end"]
-
-        # Re-derive line timing from sung chars so decorative punctuation does
-        # not move marker placement or ruby windows by itself.
-        all_starts = [c["start"] for c in char_refs]
-        all_ends = [c["end"] for c in char_refs]
-        line["start"] = round(min(all_starts), 3)
-        line["end"] = round(max(all_ends), 3)
-
+        hints = [m["hint"] for m in morae]
+        spans = _allocate_notes(line_notes, hints)
+        _writeback_char_timings(morae, spans)
+        total_notes += min(len(line_notes), len(morae))
         updated += 1
+        cursor = lo + min(len(line_notes), len(morae))
 
-    return updated, kept
+    _retime_lines_after_char_update(lines)
+    return updated, total_morae, total_notes
+
+
+# ---------------------------------------------------------------------------
+# Char mode (legacy, --mode char)
+# ---------------------------------------------------------------------------
+
+def apply_char_timing(
+    lines: list[dict],
+    notes: list[tuple[float, float, int]],
+) -> tuple[int, int]:
+    """Global char→note allocation. One note per surface character.
+
+    Kept as fallback; mora mode is preferred because kanji compounds carry
+    multiple morae per char and char-mode under-uses the available notes.
+    """
+    flat: list[tuple[dict, dict]] = []
+    for line in lines:
+        for tok in line.get("tokens", []):
+            for ch in tok.get("chars", []):
+                if _is_sung_char(ch["char"]):
+                    flat.append((line, ch))
+
+    if not flat:
+        return 0, 0
+    if not notes:
+        return 0, len(lines)
+
+    hints = [ch["start"] for _, ch in flat]
+    spans = _allocate_notes(notes, hints)
+    for (_line, ch_dict), (s, e) in zip(flat, spans, strict=True):
+        ch_dict["start"] = round(s, 3)
+        ch_dict["end"] = round(e, 3)
+
+    updated = _retime_lines_after_char_update(lines)
+    return updated, 0
+
+
+# ---------------------------------------------------------------------------
+# Shared post-processing
+# ---------------------------------------------------------------------------
+
+def _retime_lines_after_char_update(lines: list[dict]) -> int:
+    updated = 0
+    for line in lines:
+        all_chars = [
+            ch for tok in line.get("tokens", []) for ch in (tok.get("chars") or [])
+        ]
+        sung = [c for c in all_chars if _is_sung_char(c["char"])]
+        if not sung:
+            continue
+        _retime_unsung_chars(all_chars)
+        for tok in line.get("tokens", []):
+            tok_chars = tok.get("chars") or []
+            sung_tok = [c for c in tok_chars if _is_sung_char(c["char"])]
+            timing = sung_tok or tok_chars
+            if timing:
+                tok["start"] = timing[0]["start"]
+                tok["end"] = timing[-1]["end"]
+        line["start"] = round(min(c["start"] for c in sung), 3)
+        line["end"] = round(max(c["end"] for c in sung), 3)
+        updated += 1
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +420,7 @@ def apply_midi_timing(
     "--midi", "midi_path",
     type=click.Path(exists=True, dir_okay=False),
     required=True,
-    help="melody.mid (output of M2 SOME inference).",
+    help="melody.mid (output of M2 backend; rmvpe gives best mora fit).",
 )
 @click.option(
     "--aligned", "aligned_path",
@@ -285,22 +432,33 @@ def apply_midi_timing(
     "--out", "out_path",
     type=click.Path(dir_okay=False),
     default=None,
-    help="Output path.  Defaults to overwriting --aligned in-place.",
+    help="Output path. Defaults to overwriting --aligned in-place.",
+)
+@click.option(
+    "--mode", "mode",
+    type=click.Choice(["mora", "char"]),
+    default="mora", show_default=True,
+    help="mora = mora→note (kanji compounds get multiple notes); "
+         "char = legacy char→note.",
 )
 @click.option(
     "--margin", default=0.4, show_default=True,
-    help="Window margin (s) around Whisper line boundaries when collecting notes.",
+    help="Window margin (s) around Whisper line boundaries (mora mode only).",
 )
-def main(midi_path: str, aligned_path: str, out_path: str | None, margin: float) -> None:
+def main(midi_path: str, aligned_path: str, out_path: str | None, mode: str, margin: float) -> None:
     notes = extract_notes(Path(midi_path))
     print(f"[midi_timing] loaded {len(notes)} notes from {midi_path}")
 
     aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
     total_chars = sum(sum(1 for ch in line["text"] if _is_sung_char(ch)) for line in aligned)
-    print(f"[midi_timing] {len(aligned)} lines, {total_chars} sung chars")
+    print(f"[midi_timing] {len(aligned)} lines, {total_chars} sung chars (mode={mode})")
 
-    upd, kept = apply_midi_timing(aligned, notes, window_margin=margin)
-    print(f"[midi_timing] updated {upd} lines with MIDI timing, kept Whisper for {kept} lines")
+    if mode == "mora":
+        upd, n_morae, n_used = apply_mora_timing(aligned, notes, margin=margin)
+        print(f"[midi_timing] {n_morae} morae across {upd} lines, {n_used} notes consumed")
+    else:
+        upd, kept = apply_char_timing(aligned, notes)
+        print(f"[midi_timing] updated {upd} lines, kept Whisper for {kept}")
 
     dest = Path(out_path) if out_path else Path(aligned_path)
     dest.parent.mkdir(parents=True, exist_ok=True)

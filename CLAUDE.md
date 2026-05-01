@@ -4,7 +4,7 @@
 日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**使用者 自用練唱**，不上傳。
 
 ## 狀態
-**M0-M4 全 wire（2026-04-28）**，三首歌端到端跑通：
+**M0-M4 全 wire（2026-04-28）**；**timing pivot 到 mora→note alignment（2026-05-01）**。三首歌端到端跑通：
 
 | song | bg 來源 | mp4 路徑 |
 |---|---|---|
@@ -28,7 +28,9 @@
    - Linux headless：跑前設 `SDL_VIDEODRIVER=dummy`
    - 入口：`main.py` 是 hard-coded paths sample，要包成 CLI
 2. **整個 pipeline 在 Linux GPU 機跑**（RTX 5090, CUDA 13）。Mac MPS path 在 spec 裡規劃過但**從未實測**；如果 使用者 之後要在本機跑，需要重新驗證 mlx-whisper / demucs-mlx / pyannote MPS 行為。
-3. **ASR 用 faster-whisper + lyrics initial_prompt** 偏置開頭幾個字，避免 quiet 段（如 verse 1 開頭）漏抓 + 幻覺成「ご視聴ありがとう」。Mora-level 對齊先用 char-level proportional split (Whisper word_timestamps 對 JP 直接 per-char)，SOFA 升級留 v2。
+3. **ASR 用 faster-whisper + lyrics initial_prompt** 偏置開頭幾個字，避免 quiet 段（如 verse 1 開頭）漏抓 + 幻覺成「ご視聴ありがとう」。**Timing 用 mora→note alignment（`scripts/midi_timing.py` `--mode mora` 預設，2026-05-01 起）**：每個 token 的 reading 展成 mora 序列，per-line bounded greedy-monotone 配對 MIDI notes。kanji 詞（如 `再会` 4 morae）會吃到 4 個 notes 而不是 char-mode 的 2 個，sustain 尾段抓得到。Whisper char timing 只當 proximity hint。`--mode char` 是 legacy fallback。SOFA phoneme-level 升級留 v2（mora→note 視覺上已比 char-level 明顯準）。
+
+   **Pitch backend ≠ timing backend**：`midi_timing.py` 吃的 MIDI 用 rmvpe（segment 數接近 mora 數），pitch bar 顯示用 cectc。同首歌兩個 MIDI 共存。
 4. **個人使用，不上傳**。Why: 著作権法 30 条（私的使用）允許自用；上傳會撞原盤権 + Content ID。詳見 spec §2。
 5. **不做連續 f0 曲線**（Vocal Pitch Monitor 風格已否決）。要的是離散音高方塊。
 
@@ -41,6 +43,9 @@
 - **不要直接拿 yt-dlp 預設下的 mp4 當 MID2BAR 背景。** YouTube 預設給 AV1，OpenCV 沒軟解，會 silent black bg。`render_mp4.py` 一律 ffmpeg re-encode 成 h264 yuv420p；`download_song.py` 也偏好 `vcodec*=avc1` 720p 避開 AV1。
 - **「Lyric Video」型 YouTube 上傳（已燒入歌詞）不要當 karaoke bg**，會跟我們的歌詞層撞。`download_song.py --no-video` 跳過抓 video，user 自己提供靜態 bg。
 - **MID2BAR `BarCountEntry` / `AnimationEntry` 是 frozen dataclass，app.py 用 `["key"]` subscript 存取 → `TypeError: 'BarCountEntry' object is not subscriptable`，每 frame 都觸發，被 `draw()` 的 try/except 吞掉，導致 `draw_lyrics()` 永遠不執行，歌詞全黑。** `settings_schema.py` gitignored 不能直接改，修法是在 `render_mp4.py` import app 之前 monkey-patch `__getitem__` 到兩個 class：`_cls.__getitem__ = lambda self, key: getattr(self, key)`。任何新版 MID2BAR 如果歌詞突然消失，先查這條。
+- **不要對整個 token 發 `@Ruby`** — fugashi 把「ぶつけ合っ」當一個動詞 token (reading「ぶつけあっ」)，naive 寫法 `@Ruby=ぶつけ合っ,ぶつけあっ` 會在 hiragana 「ぶつけ」上面也標假名。永遠走 `karaoke_jp.lrc_export.split_furigana()` 拆 kanji-run / kana-run，**只給 kanji-run 發 ruby**。
+- **不要用 `app.particles = []` 關 MID2BAR 粒子。** `update_particles()` 每 frame 把三個 list 重新 reassign 成普通 list，patch 只活一個 frame。要 patch 的是 method：`app._update_particle_list = lambda particle_list, screen: []`。
+- **不要為了通過 MID2BAR 的 ruby time 檢查設 char.end = next_char.start。** MID2BAR `apply_rubies_to_result` 用 `time_end ≤ ruby.end` 嚴格 contain，`time_end` 是 body 內 lyric 之後的下一個 time tag。@Ruby end 必須涵蓋這個 next-body-tag 時間（lookup 到下一 char.start，不是用 segment 自己的 char.end，因為 midi_timing 把 char.end 砍到 note_off 留了吐氣 gap）。
 
 ## 第一個 test case 怎麼選
 - **Vocaloid 純假名歌詞**最安全（沒 gikun，沒漢字異讀問題）
@@ -51,7 +56,7 @@
 - 每個里程碑結束跑一次 end-to-end，確認沒 regression
 - 振假名 / mora 對齊這種「永遠不可能 100%」的步驟，準備 override JSON 機制比追求模型完美重要
 - 中間檔（vocals.wav、melody.mid、ruby.lrc）每階段都存，cache 友善
-- Snakemake `--rerun-triggers params input code` 開著，改 code 不會重跑分離（注意：Snakemake 9 要 space-separated，不是 comma）
+- Snakemake **永遠帶 `--rerun-triggers mtime`**（單純看時間戳）。Why: 2026-05-01 起 outputs/ 有部分檔案是手跑產生（沒寫 `.snakemake/metadata/` provenance hash），default trigger set 會以「missing metadata」為由全 rebuild。code 改動的偵測自己用 git，不靠 Snakemake hash。注意：Snakemake 9 trigger 名要 space-separated，不是 comma
 
 ## 環境隔離 — single source of truth
 **「主 venv + per-stage subprocess venv」是唯一正典**。**四個** venv：

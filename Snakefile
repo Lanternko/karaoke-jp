@@ -1,7 +1,11 @@
 # karaoke-jp Snakemake pipeline (M1-M4 wired).
 #
 # Usage:
-#   snakemake --rerun-triggers params input code -j 1 outputs/<song>/karaoke.mp4
+#   snakemake --rerun-triggers mtime -j 1 outputs/<song>/karaoke.mp4
+#
+# (mtime-only: outputs/ has files produced outside Snakemake so provenance
+# hashes are missing; default trigger set would force a full rebuild on
+# every invocation. See CLAUDE.md "做事方式".)
 #
 # DAG: separate -> melody -> {tokenize, asr -> align} -> {midi_markers,
 #      export_lrc} -> render. Each stage runs in its own venv (see

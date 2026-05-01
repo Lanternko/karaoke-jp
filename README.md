@@ -26,7 +26,8 @@ YouTube URL
                                                      SOME fallback)
             └─ tokenize + asr + align ─► aligned.json
                                                     (M3, fugashi + faster-whisper
-                                                     + kana-aware NW)
+                                                     + kana-aware NW; Whisper char ts)
+                 ├─ midi_timing --mode mora ─► aligned.json (mora→note ts; default)
                  ├─ midi_markers ─► melody_markers.mid (M4 prep)
                  ├─ export_lrc   ─► karaoke.lrc       (M4 prep)
                  └─ render       ─► karaoke.mp4       (M4, headless MID2BAR fork)

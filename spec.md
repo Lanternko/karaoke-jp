@@ -86,7 +86,7 @@ Demucs / Mel-Band-RoFormer 分離出的伴奏**仍然是原盤的衍生**（衍�
 | Note 量化（onset/offset） | **`openvpi/SOME`** | RMVPE backbone；輸出 MIDI with note-on/off；無需另跑 madmom |
 | 歌詞辨識 | **mlx-whisper**（large-v3-turbo） | Mac 上比 whisper.cpp 快 2× |
 | Word-level 對齊 | WhisperX 的 wav2vec2 alignment | MPS 可跑（WhisperX 主程式不行） |
-| Mora-level 對齊 | **SOFA**（`qiuqiao/SOFA`） | Singing-Oriented Forced Aligner，用 `lottev1991/opencpop-cjke-multidict` 加日文 |
+| Mora-level 對齊 | **mora→note via MIDI**（`scripts/midi_timing.py --mode mora`，default） | 每 token reading 展 mora，per-line bounded greedy-monotone match 到 melody.mid notes。kanji 詞拿到 N notes 而非 1 個。SOFA phoneme-level 留 v2 |
 | Tokenize / 讀音 | **fugashi + UniDic** | 形態素解析；不要用 pykakasi |
 | 異讀詞修正 | **Yomikata BERT**（130 個 heteronym） | 運命 / 本気 等 |
 | 罕用讀音 / gikun | **per-song JSON override** | 運命=さだめ、宇宙=そら 必須手動寫 |
@@ -116,10 +116,10 @@ Demucs / Mel-Band-RoFormer 分離出的伴奏**仍然是原盤的衍生**（衍�
                           (note onsets)    │
                                           │
 [lyrics]                                   │
-  vocals.wav ─► mlx-whisper ─► raw text   │
-              ─► WhisperX align ─► word ts │
-              ─► SOFA ─► mora ts          │
+  vocals.wav ─► faster-whisper ─► raw text │
               ─► fugashi+UniDic ─► tokens  │
+              ─► align (kana NW) ─► aligned.json (Whisper char ts)
+              ─► midi_timing --mode mora ─► aligned.json (mora→note ts)
               ─► Yomikata + override JSON ─► ruby
               ─► ruby-LRC                  │
                                           │
@@ -228,12 +228,14 @@ karaoke-jp/
   2. `fix_octave_errors`：local window(±5) median 抓孤立 sub-harmonic outlier
   3. `fill_held_note_gaps(gap_threshold=8.0)`：填 RMVPE dropout on 超長持音（≥8s 同音高 gap）
 
-**M3 — 歌詞 ruby-LRC** ✅ v1 done（mora-level → v2 留 SOFA）
+**M3 — 歌詞 ruby-LRC** ✅ v1 done（mora→note via MIDI；SOFA 留 v2 phoneme）
 - ASR：faster-whisper large-v3 + lyrics initial_prompt 偏置開頭
 - Tokenize：fugashi + UniDic-lite
 - Align：char→kana 雙向 stream + Needleman-Wunsch（codex round 1 翻過：raw char distance 在 kanji/kana mismatch 會崩）
 - 實測：tuki-zero 538 lyrics chars vs 503 ASR chars，88% kana 直接配對
-- v2 計畫：SOFA forced alignment 替代 Whisper proportional split，melisma / 拖長母音更準
+- **Timing pivot（2026-05-01）**：`scripts/midi_timing.py` 預設 mora-mode — 每 token reading 展 mora，per-line bounded greedy-monotone match 到 melody.mid。kanji 詞拿到 N notes（如 `再会` 4 notes）而不是 char-mode 的 1 個。實測 tuki-zero rmvpe 626 notes vs 661 morae，per-line 鎖死位移在該行內，視覺驗證比 char-mode 準。`--mode char` 是 legacy fallback。
+- **midi_timing 用 rmvpe melody.mid**（segment 數接近 mora 數），pitch bar 顯示用 cectc。memory `project_pitch_pipeline.md` 有 backend split 的決策。
+- v2 計畫：SOFA forced alignment phoneme-level，melisma / 拖長母音的 mora→note even-split 改 phoneme-level；multi-kanji token 的 mora→char 屬性升級成 UniDic per-kanji 查表（解 `名前 (なまえ) → 名→な, 前→まえ`）。
 
 **M4 — MID2BAR-Player fork** ✅ done（實際半天）
 - Headless：SDL_VIDEODRIVER=dummy + tkinter/sounddevice stub
@@ -249,7 +251,7 @@ karaoke-jp/
 
 **M6 — Snakemake 批次化** partially done
 - 已 wire：DAG 8 個 rule，single song 跑通
-- TODO：50 首 fan-out 實測、conda env per rule（取代當前 venv）、`--rerun-triggers params input code` 配置
+- TODO：50 首 fan-out 實測、conda env per rule（取代當前 venv）。`--rerun-triggers mtime` 是當前 standing 姿勢（outputs/ 部分檔案手跑產生，沒 provenance metadata；content-aware trigger 放棄）
 
 **M7 — 振假名品質 polish** pending
 - Yomikata BERT pass 處理 130 個 heteronym
@@ -273,9 +275,11 @@ karaoke-jp/
 
 6. ~~**批次速度**~~ ✅ 部分解決：4 分鐘 song 從 download 到 mp4 ~3-4 分鐘（含 ASR model load）。M6 50 首 fan-out 還沒實測，但 cache 友善的 DAG 已驗。
 
-7. **M3 alignment 在 instrumental-heavy 段** — Whisper 在 0-30s pure instrumental 會幻覺成「ご視聴ありがとう」/「初音ミク」，要 lyrics initial_prompt 偏置才能搶回 verse 1。當前已實作但歌曲尾段（Whisper missed quiet 收尾）還是要靠 char-level interpolation 填，誤差累積。
+7. **M3 alignment 在 instrumental-heavy 段** — Whisper 在 0-30s pure instrumental 會幻覺成「ご視聴ありがとう」/「初音ミク」，要 lyrics initial_prompt 偏置才能搶回 verse 1。當前已實作；歌曲尾段（Whisper missed quiet 收尾）改靠 mora→note allocation 抓 MIDI sustain notes，比舊 char-level interpolation 穩。但若 melody MIDI 本身在尾段也漏抓（cectc 偶見），就還是會走 fallback 內插。
 
 8. **Mac MPS path 從未實測** — 原 spec 設計成 Mac 為主、SSH GPU 跑 M1，實際到目前都在 Linux GPU 跑。Mac on-board 跑要重新驗證。
+
+9. **漢字標音目前無難度過濾** — `lrc_export.split_furigana()` 對所有有 reading 的漢字 run 都發 @Ruby，常用字（窓、涙、空、傘…）也會被標。TODO：加 JLPT level lookup（kanjidic2 的 `jlpt-new` field，或 jisho tags），filter 成「N4 以上才標」模式。實作要動的點：`src/karaoke_jp/lrc_export.py` 的 `split_furigana` 加參數 `min_jlpt_level`，runs 內所有 char 都 ≤ N5 → 跳過。資料來源：`http://www.edrdg.org/kanjidic/kanjd2index.html` 或 jamdict pip package。預估 0.5 天。
 
 ---
 
