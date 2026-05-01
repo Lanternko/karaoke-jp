@@ -1,4 +1,4 @@
-# karaoke-jp
+<img width="1421" height="811" alt="image" src="https://github.com/user-attachments/assets/c4d2b381-109c-47ec-a2e2-a99b13abc8ec" /># karaoke-jp
 
 JOYSOUND 風日式卡拉 OK 影片自動生成器。**個人練唱用，不要上傳。**
 
@@ -6,7 +6,9 @@ JOYSOUND 風日式卡拉 OK 影片自動生成器。**個人練唱用，不要�
 
 完整設計、決策歷史、踩坑記錄分別在 [spec.md](spec.md) / [MEMORY.md](MEMORY.md) / [CLAUDE.md](CLAUDE.md)。
 
-![Uploading image.png…]()
+<img width="1421" height="811" alt="image" src="https://github.com/user-attachments/assets/46217b8e-0d26-4b62-8c7b-fb5c241485ce" />
+
+
 
 
 ## 重要：版權與使用範圍
