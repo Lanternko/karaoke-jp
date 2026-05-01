@@ -101,16 +101,39 @@ MELODY_BACKEND=cectc snakemake --rerun-triggers mtime -j 1 \
 
 ## 安裝
 
-四個 venv，刻意分開（套件版本互衝）：
+**前置需求**：
+
+- Python 3.10–3.12
+- NVIDIA GPU + CUDA 12 或 13 driver（torch 2.11+cu130 wheel）
+- 系統指令：`git`, `wget`, `unzip`, `ffmpeg`, `curl`
+
+**一鍵安裝**：
+
+```bash
+git clone https://github.com/Lanternko/karaoke-jp.git
+cd karaoke-jp
+bash scripts/setup.sh
+```
+
+約 10 分鐘（看 checkpoint 下載速度），會自動完成：
+
+1. 建 4 個 venv（套件版本互衝故刻意分開）
+2. clone 3 個 third-party repo（SOME / CTC_CE_for_AST / MID2BAR-Player）到 `third_party/`
+3. 下載 3 個 checkpoint（RMVPE 352 MB、SOME baseline 435 MB、CTC+CE 3.9 MB）
+4. 跑 smoke test 確認 4 個 venv 各自都 import 得了關鍵套件
+
+腳本 idempotent：失敗或重跑只會補做還沒完成的步驟。
+
+**venv 用途對照**：
 
 | venv | 負責階段 | 為什麼分開 |
 |---|---|---|
-| `~/venvs/karaoke-jp/`         | M0 下載、M1 separate、M4 prep、CLI | 主環境，torch 2.11+cu13 |
+| `~/venvs/karaoke-jp/`         | M0 下載、M1 separate、M4 prep、CLI | 主環境，torch 2.11+cu130 |
 | `~/venvs/karaoke-jp-melody/`  | M2 SOME / CTC+CE 推理 | librosa<0.10 + numpy<2 跟主 venv 撞 |
 | `~/venvs/karaoke-jp-lyrics/`  | M3 ASR + tokenize + align | faster-whisper 要 CUDA 12 cuBLAS shim |
 | `~/venvs/karaoke-jp-render/`  | M4 render | Pygame + opencv-python，跟主 venv 的 click 衝 |
 
-四個 venv 完整 setup（含 third_party clone、checkpoint 下載）見 [`third_party/README.md`](third_party/README.md)。
+各 venv 的完整套件清單跟 checkpoint 取得方式詳見 [`third_party/README.md`](third_party/README.md)。
 
 ## 目錄結構
 
