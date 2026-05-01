@@ -1,10 +1,10 @@
 # karaoke-jp
 
 ## Why
-日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**使用者 自用練唱**，不上傳。
+日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**自用練唱**，不上傳。
 
 ## 狀態
-**M0-M4 全 wire（2026-04-28）**；**timing pivot 到 mora→note alignment（2026-05-01）**。三首歌端到端跑通：
+**M0-M4 全 wire（2026-04-28）**；**timing pivot 到 mora→note alignment（2026-05-01）**；**M8 GUI scoped（2026-05-02，pending impl）**。三首歌端到端跑通：
 
 | song | bg 來源 | mp4 路徑 |
 |---|---|---|
@@ -14,7 +14,24 @@
 
 三首都 1080p60，duration 跟原曲對齊到 sample，pitch bars + per-char wipe + furigana 全部達成。
 
-下一步：M6 Snakemake 批次 / M7 Yomikata + override JSON（M5 已完成 20% vocal mix，可選多音量版）。
+下一步：**M8 Gradio GUI**（單檔 `scripts/gui.py`，4 欄位：YouTube URL / MP4 上傳 / lyrics paste / vocal-ratio slider / bg mode）/ M6 Snakemake 批次 / M7 Yomikata + override JSON（M5 已完成 20% vocal mix，可選多音量版）。
+
+## M8 GUI 設計（已 scope 待實作）
+**目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（`localhost:7860`，**不開 share**）。
+
+**啟動**：`~/venvs/karaoke-jp/bin/python scripts/gui.py`
+
+**4 欄位 → song dir**：
+1. YouTube URL **或** MP4 上傳（二選一）→ 走 `download_song.py` 或 `ffmpeg -i upload.mp4 -vn songs/<id>/source.wav`（mp4 不在 `Snakefile.source_for()` 接受清單，必須 ffmpeg 抽 wav）
+2. Lyrics 純文字 paste → `songs/<id>/lyrics.txt`（pipeline 會用它當 alignment ground truth，**不靠 Whisper transcribe 的文字**）
+3. 人聲比例 slider 0–100 → export `VOCAL_RATIO=<x/100>` 給 Snakemake
+4. 背景模式 radio：原影片（mp4 copy / yt-dlp 拉 video）/ 純黑（`ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=60 -t <duration>`）/ MID2BAR 預設藍漸層（不放 background.* 即可）
+
+**song-id 規則**：YouTube → yt-dlp title slug；MP4 上傳 → `<filename-slug>-<sha1[:8]>`（避開 `lyrics_images/` cache 撞名雷）
+
+**唯一要改的既有檔**：`Snakefile:60` 把 `VOCAL_RATIO = 0.35` 改成 `VOCAL_RATIO = os.environ.get("VOCAL_RATIO", "0.35")`，其他全靠 subprocess。
+
+**不在 GUI scope**：LLM 修歌詞 / LLM 推 ruby / Whisper transcribe-only 模式 / 多音量版輸出 / share=True / 多歌並行。詳見 NEVER。
 
 ## 三件套
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
@@ -27,7 +44,7 @@
    - LRC 格式：`[mm:ss:cs]`（colon 不是 dot，centiseconds 不是 ms），ruby 是 header `@RubyN=base,ruby,start,end`，不是 inline `(かな)`
    - Linux headless：跑前設 `SDL_VIDEODRIVER=dummy`
    - 入口：`main.py` 是 hard-coded paths sample，要包成 CLI
-2. **整個 pipeline 在 Linux GPU 機跑**（RTX 5090, CUDA 13）。Mac MPS path 在 spec 裡規劃過但**從未實測**；如果 使用者 之後要在本機跑，需要重新驗證 mlx-whisper / demucs-mlx / pyannote MPS 行為。
+2. **整個 pipeline 在 Linux GPU 機跑**（RTX 5090, CUDA 13）。Mac MPS path 在 spec 裡規劃過但**從未實測**；如果之後要在本機跑，需要重新驗證 mlx-whisper / demucs-mlx / pyannote MPS 行為。
 3. **ASR 用 faster-whisper + lyrics initial_prompt** 偏置開頭幾個字，避免 quiet 段（如 verse 1 開頭）漏抓 + 幻覺成「ご視聴ありがとう」。**Timing 用 mora→note alignment（`scripts/midi_timing.py` `--mode mora` 預設，2026-05-01 起）**：每個 token 的 reading 展成 mora 序列，per-line bounded greedy-monotone 配對 MIDI notes。kanji 詞（如 `再会` 4 morae）會吃到 4 個 notes 而不是 char-mode 的 2 個，sustain 尾段抓得到。Whisper char timing 只當 proximity hint。`--mode char` 是 legacy fallback。SOFA phoneme-level 升級留 v2（mora→note 視覺上已比 char-level 明顯準）。
 
    **Pitch backend ≠ timing backend**：`midi_timing.py` 吃的 MIDI 用 rmvpe（segment 數接近 mora 數），pitch bar 顯示用 cectc。同首歌兩個 MIDI 共存。
@@ -46,10 +63,12 @@
 - **不要對整個 token 發 `@Ruby`** — fugashi 把「ぶつけ合っ」當一個動詞 token (reading「ぶつけあっ」)，naive 寫法 `@Ruby=ぶつけ合っ,ぶつけあっ` 會在 hiragana 「ぶつけ」上面也標假名。永遠走 `karaoke_jp.lrc_export.split_furigana()` 拆 kanji-run / kana-run，**只給 kanji-run 發 ruby**。
 - **不要用 `app.particles = []` 關 MID2BAR 粒子。** `update_particles()` 每 frame 把三個 list 重新 reassign 成普通 list，patch 只活一個 frame。要 patch 的是 method：`app._update_particle_list = lambda particle_list, screen: []`。
 - **不要為了通過 MID2BAR 的 ruby time 檢查設 char.end = next_char.start。** MID2BAR `apply_rubies_to_result` 用 `time_end ≤ ruby.end` 嚴格 contain，`time_end` 是 body 內 lyric 之後的下一個 time tag。@Ruby end 必須涵蓋這個 next-body-tag 時間（lookup 到下一 char.start，不是用 segment 自己的 char.end，因為 midi_timing 把 char.end 砍到 note_off 留了吐氣 gap）。
+- **GUI 不要引入任何 LLM 步驟**（修歌詞、推 ruby、補 timing、整理 prompt）。Why: user 反映「成果不穩定，且通常要付費 API 才有像樣效果」。既有 fugashi+UniDic+forced alignment 已夠用；本機模型（demucs/roformer/whisper/cectc）不算 LLM，那些保留無妨。
+- **不要重寫 user-lyrics → alignment ground truth 的 glue。已經 wired**：`scripts/run_asr.py --lyrics lyrics.txt` 把開頭當 initial_prompt 偏置 ASR；`scripts/align_lyrics.py` 跑 NW kana alignment 後輸出 `aligned.json`，**文字以 `lyrics.txt` 為準、timing 用 Whisper char ts 後續被 `midi_timing.py` 替換**。GUI 只需要把 user paste 寫進 `songs/<id>/lyrics.txt` 即可。
 
 ## 第一個 test case 怎麼選
 - **Vocaloid 純假名歌詞**最安全（沒 gikun，沒漢字異讀問題）
-- **使用者 已經很熟、知道原唱怎麼唱的歌**（音高 / 對齊出錯時抓得到）
+- **自己已經很熟、知道原唱怎麼唱的歌**（音高 / 對齊出錯時抓得到）
 - 4 分鐘以內（短一點 debug 快）
 
 ## 做事方式
@@ -73,7 +92,6 @@
 `melody.py` 的 subprocess `env=` 只 passthrough whitelist 的變數（PATH / HOME / LANG / LD_LIBRARY_PATH / CUDA_*），**不抄整個 `os.environ`**，避免父 venv 的 PYTHONPATH/PYTHONHOME/VIRTUAL_ENV 漏進子環境。M3/M4 subprocess 走同 pattern。
 
 ## 跨專案 context
-- 使用者 的 Mac：Apple Silicon（**目前 pipeline 沒在 Mac 跑過**）
-- 主 dev / runtime 機：`linux-gpu`（RTX 5090, 33.67 GB VRAM, MeanAudio 訓練那台）
-- 整個 hub：[Documents/CLAUDE.md](../../CLAUDE.md)
+- 本機 Mac：Apple Silicon（**目前 pipeline 沒在 Mac 跑過**）
+- 主 dev / runtime 機：Linux GPU（RTX 5090, 33.67 GB VRAM）
 - Repo: https://github.com/Lanternko/karaoke-jp
