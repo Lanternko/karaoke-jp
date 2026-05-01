@@ -1,8 +1,10 @@
-<img width="1421" height="811" alt="image" src="https://github.com/user-attachments/assets/c4d2b381-109c-47ec-a2e2-a99b13abc8ec" /># karaoke-jp
 
-JOYSOUND 風日式卡拉 OK 影片自動生成器。**個人練唱用，不要上傳。**
 
-輸入一個 YouTube URL 或本地音訊，輸出 1080p60 的 MP4，包含離散音高方塊、逐字歌詞 wipe、振假名（ruby）、可選背景圖／影片。
+JOYSOUND 風日式卡拉 OK 影片自動生成器。**個人練唱用，禁止商用、和上傳 Youtube 等網路平台。**
+
+輸入：YouTube URL 或音訊檔案
+
+輸出：1080p60 的 MP4（包含音高方塊、逐字歌詞、假名拼音、可選背景圖／影片）。
 
 完整設計、決策歷史、踩坑記錄分別在 [spec.md](spec.md) / [MEMORY.md](MEMORY.md) / [CLAUDE.md](CLAUDE.md)。
 
