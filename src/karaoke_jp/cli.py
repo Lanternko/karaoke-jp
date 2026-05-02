@@ -177,5 +177,15 @@ def mix(
     print(f"[mix] wrote {out_path}")
 
 
+@main.command("gui")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Gradio bind host.")
+@click.option("--port", default=7860, type=int, show_default=True, help="Gradio bind port.")
+def gui(host: str, port: int) -> None:
+    """Launch the local Gradio GUI."""
+    from .gui import launch_app
+
+    launch_app(host=host, port=port)
+
+
 if __name__ == "__main__":
     main()

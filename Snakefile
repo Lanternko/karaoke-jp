@@ -26,6 +26,13 @@ OUT_DIR = Path("outputs")
 # low-register vocals where RMVPE octave-halving bites.
 MELODY_BACKEND = os.environ.get("MELODY_BACKEND", "rmvpe")
 
+try:
+    VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", "0.35"))
+except ValueError as exc:
+    raise ValueError("VOCAL_RATIO must be a float in [0, 1].") from exc
+if not (0.0 <= VOCAL_RATIO <= 1.0):
+    raise ValueError(f"VOCAL_RATIO must be in [0, 1], got {VOCAL_RATIO}")
+
 # Discover song IDs by scanning songs/<id>/source.* present.
 SONG_IDS = sorted(
     p.parent.name
@@ -57,7 +64,6 @@ LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
 LRC_BLOCK_SIZE = 2  # 2 phrases per lyric block → MID2BAR alternates row 2/3 (上下)
 QUARTERS_PER_PAGE = 8  # bar-display fixed scale: 8 quarter notes per page → ≈5s @ 96 BPM
-VOCAL_RATIO = 0.35  # guide-vocal level in mixed.wav
 MID2BAR_APP_SETTINGS = str(Path("config") / "mid2bar_settings.json")
 
 
@@ -220,11 +226,11 @@ rule midi_markers:
 
 
 rule mix:
-    """M5: Blend instrumental + vocals at 20 % vocal ratio.
+    """M5: Blend instrumental + vocals at a configurable vocal ratio.
 
-    Produces mixed.wav which is fed to the renderer so the guide vocal is
-    audible at low volume while the melody bar still shows the karaoke pitch.
-    Set VOCAL_RATIO=0 in the shell invocation to build a pure-instrumental
+    Produces mixed.wav which is fed to the renderer so the guide vocal stays
+    audible while the melody bar still shows the karaoke pitch. Set
+    VOCAL_RATIO=0 in the shell invocation to build a pure-instrumental
     version instead.
     """
     input:

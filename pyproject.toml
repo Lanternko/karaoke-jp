@@ -41,6 +41,9 @@ score = [
 batch = [
     "snakemake>=8.0",
 ]
+gui = [
+    "gradio>=5,<6",
+]
 dev = [
     "ruff>=0.5",
     "mypy>=1.10",

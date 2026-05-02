@@ -135,6 +135,24 @@ bash scripts/setup.sh
 
 各 venv 的完整套件清單跟 checkpoint 取得方式詳見 [`third_party/README.md`](third_party/README.md)。
 
+## GUI
+
+本機 Gradio GUI 包裝同一條 Snakemake pipeline。輸入可以是 YouTube URL 或上傳的 mp4，加上貼上的歌詞文字、人聲混音滑桿，以及「原始影片 / 純黑底」的背景選擇。
+
+把 GUI 依賴裝進主 venv：
+
+```bash
+~/venvs/karaoke-jp/bin/pip install -e '.[batch,gui]'
+```
+
+啟動：
+
+```bash
+~/venvs/karaoke-jp/bin/karaoke-jp gui --host 127.0.0.1 --port 7860
+```
+
+瀏覽器開 `http://127.0.0.1:7860`。GUI 會把檔案 stage 到 `songs/gui-<timestamp>-<id>/`，最終影片寫到 `outputs/gui-<timestamp>-<id>/karaoke.mp4`。
+
 ## 目錄結構
 
 ```
