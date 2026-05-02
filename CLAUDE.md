@@ -4,7 +4,7 @@
 日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**自用練唱**，不上傳。
 
 ## 狀態
-**M0-M4 全 wire（2026-04-28）**；**timing pivot 到 mora→note alignment（2026-05-01）**；**M8 GUI scoped（2026-05-02，pending impl）**。三首歌端到端跑通：
+**M0-M4 全 wire（2026-04-28）**；**timing pivot 到 mora→note alignment（2026-05-01）**；**M8 Gradio GUI 完成（2026-05-02，commit `d1d6157`）**。三首歌端到端跑通：
 
 | song | bg 來源 | mp4 路徑 |
 |---|---|---|
@@ -14,14 +14,15 @@
 
 三首都 1080p60，duration 跟原曲對齊到 sample，pitch bars + per-char wipe + furigana 全部達成。
 
-下一步：**M8 Gradio GUI**（單檔 `scripts/gui.py`，4 欄位：YouTube URL / MP4 上傳 / lyrics paste / vocal-ratio slider / bg mode）/ M6 Snakemake 批次 / M7 Yomikata + override JSON（M5 已完成 20% vocal mix，可選多音量版）。
+下一步：**M6 Snakemake 批次** / **M7 Yomikata + override JSON**（M5 已完成 20% vocal mix，可選多音量版）。
 
-## M8 GUI 設計（已 scope 待實作）
-**目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（`localhost:7860`，**不開 share**）。
+## M8 GUI（已實作 2026-05-02）
+**目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（預設 `127.0.0.1:7860`，**不開 share**；`--host 0.0.0.0` 才接外網）。
 
-**啟動**：`~/venvs/karaoke-jp/bin/python scripts/gui.py`
+**啟動**：`~/venvs/karaoke-jp/bin/karaoke-jp gui [--host 127.0.0.1] [--port 7860]`
+> 實作落在 `src/karaoke_jp/gui.py`（package module，**不是** standalone `scripts/gui.py`），透過 Click `gui` 子命令 launch；裝 GUI 依賴：`pip install -e '.[batch,gui]'`（`gradio>=5,<6`）。
 
-**4 欄位 → song dir**：
+**5 個 Gradio 欄位 → song dir**：
 1. YouTube URL **或** MP4 上傳（二選一）→ 走 `download_song.py` 或 `ffmpeg -i upload.mp4 -vn songs/<id>/source.wav`（mp4 不在 `Snakefile.source_for()` 接受清單，必須 ffmpeg 抽 wav）
 2. Lyrics 純文字 paste → `songs/<id>/lyrics.txt`（pipeline 會用它當 alignment ground truth，**不靠 Whisper transcribe 的文字**）
 3. 人聲比例 slider 0–100 → export `VOCAL_RATIO=<x/100>` 給 Snakemake
@@ -29,7 +30,7 @@
 
 **song-id 規則**：YouTube → yt-dlp title slug；MP4 上傳 → `<filename-slug>-<sha1[:8]>`（避開 `lyrics_images/` cache 撞名雷）
 
-**唯一要改的既有檔**：`Snakefile:60` 把 `VOCAL_RATIO = 0.35` 改成 `VOCAL_RATIO = os.environ.get("VOCAL_RATIO", "0.35")`，其他全靠 subprocess。
+**Snakefile 接點**：`Snakefile:30` `VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", "0.35"))`，validation 強制落在 `[0, 1]`。其他靠 subprocess，沒有額外 Snakemake 改動。
 
 **不在 GUI scope**：LLM 修歌詞 / LLM 推 ruby / Whisper transcribe-only 模式 / 多音量版輸出 / share=True / 多歌並行。詳見 NEVER。
 
