@@ -211,18 +211,24 @@ rule export_lrc:
 
 
 rule midi_markers:
-    """M4b: melody_quantized.mid -> melody_markers.mid (page boundaries
-    every QUARTERS_PER_PAGE quarter notes for fixed pixels-per-quarter)."""
+    """M4b: melody_quantized.mid -> melody_markers.mid.
+
+    Page boundaries stay on a fixed beat grid, while note events are filtered
+    to lyric windows so false melody detections in instrumental gaps do not
+    render pitch bars when no lyrics are present.
+    """
     input:
         midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
         bpm=str(OUT_DIR / "{song}" / "melody_quantized.mid.bpm.txt"),
+        aligned=str(OUT_DIR / "{song}" / "aligned_midi.json"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
     shell:
         f"{MAIN_PY} scripts/add_midi_markers.py "
         f"--midi {{input.midi:q}} --out {{output.midi:q}} "
         f"--mode beat --bpm-file {{input.bpm:q}} "
-        f"--quarters-per-page {QUARTERS_PER_PAGE}"
+        f"--quarters-per-page {QUARTERS_PER_PAGE} "
+        f"--aligned {{input.aligned:q}}"
 
 
 rule mix:

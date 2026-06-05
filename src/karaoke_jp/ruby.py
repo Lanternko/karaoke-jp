@@ -61,38 +61,55 @@ class Line:
         return {"text": self.text, "tokens": [t.to_dict() for t in self.tokens]}
 
 
-def _tokenize_line(tagger, text: str, override: dict[str, str]) -> Line:
+def _token_from_word(word, override: dict[str, str]) -> Token | None:
+    surface = word.surface
+    if not surface or _WS_RE.fullmatch(surface):
+        return None
+
+    feat = word.feature
+    pos = feat.pos1 or "?"
+    is_punct = pos in {"補助記号", "記号"}
+
+    # Override wins (gikun).
+    if surface in override:
+        reading_hira = override[surface]
+        kana_only = not has_kanji(surface)
+    elif has_kanji(surface):
+        kana = getattr(feat, "kana", None) or getattr(feat, "pron", None)
+        reading_hira = kata_to_hira(kana) if kana else None
+        kana_only = False
+    else:
+        reading_hira = None
+        kana_only = True
+
+    return Token(
+        surface=surface,
+        reading=reading_hira,
+        kana_only=kana_only,
+        pos=pos,
+        is_punct=is_punct,
+    )
+
+
+def _tokenize_phrase(tagger, text: str, override: dict[str, str]) -> list[Token]:
     tokens: list[Token] = []
     for word in tagger(text):
-        surface = word.surface
-        if not surface or _WS_RE.fullmatch(surface):
-            continue
+        token = _token_from_word(word, override)
+        if token is not None:
+            tokens.append(token)
+    return tokens
 
-        feat = word.feature
-        pos = feat.pos1 or "?"
-        is_punct = pos in {"補助記号", "記号"}
 
-        # Override wins (gikun).
-        if surface in override:
-            reading_hira = override[surface]
-            kana_only = not has_kanji(surface)
-        elif has_kanji(surface):
-            kana = getattr(feat, "kana", None) or getattr(feat, "pron", None)
-            reading_hira = kata_to_hira(kana) if kana else None
-            kana_only = False
-        else:
-            reading_hira = None
-            kana_only = True
-
-        tokens.append(
-            Token(
-                surface=surface,
-                reading=reading_hira,
-                kana_only=kana_only,
-                pos=pos,
-                is_punct=is_punct,
-            )
-        )
+def _tokenize_line(tagger, text: str, override: dict[str, str]) -> Line:
+    tokens: list[Token] = []
+    # Lyrics use ASCII/full-width spaces as phrase breaks.  Fugashi/UniDic does
+    # not treat those spaces as hard boundaries, so tokenizing a whole visual
+    # line can misclassify the first kanji of the next phrase as a suffix
+    # (e.g. "僕のため　君のため" -> 君=くん).  Tokenize each phrase independently
+    # while keeping the original visual line intact for downstream rendering.
+    for phrase in _WS_RE.split(text):
+        if phrase:
+            tokens.extend(_tokenize_phrase(tagger, phrase, override))
     return Line(text=text, tokens=tokens)
 
 
@@ -122,8 +139,8 @@ def annotate_lyrics(
         if not line:
             continue
         # Full-width 　 inside a visual line is a phrase break, not a line
-        # break. fugashi naturally drops whitespace tokens, so keep the line
-        # whole and let alignment / rendering decide whether to pause there.
+        # break. _tokenize_line respects it for reading disambiguation while
+        # keeping the line whole for alignment / rendering.
         lines.append(_tokenize_line(tagger, line, override))
     return lines
 

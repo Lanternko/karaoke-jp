@@ -14,7 +14,7 @@ from karaoke_jp.midi_markers import inject_beat_markers, inject_line_markers
 @click.command()
 @click.option("--midi", "midi_path", type=click.Path(exists=True, dir_okay=False), required=True)
 @click.option("--aligned", "aligned_path", type=click.Path(exists=True, dir_okay=False),
-              default=None, help="Required for --mode line.")
+              default=None, help="Required for --mode line; optional in --mode beat to filter notes to lyric windows.")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
 @click.option(
     "--mode",
@@ -31,6 +31,8 @@ from karaoke_jp.midi_markers import inject_beat_markers, inject_line_markers
               default=None, help="(--mode beat) sidecar with BPM as a single float.")
 @click.option("--quarters-per-page", default=8, type=int, show_default=True,
               help="(--mode beat) quarter notes per page = visual horizontal scale.")
+@click.option("--note-window-margin", default=0.25, type=float, show_default=True,
+              help="(--mode beat with --aligned) seconds of padding around lyric windows when filtering notes.")
 def main(
     midi_path: str,
     aligned_path: str | None,
@@ -40,6 +42,7 @@ def main(
     bpm: float | None,
     bpm_file: str | None,
     quarters_per_page: int,
+    note_window_margin: float,
 ) -> None:
     if mode == "line":
         if aligned_path is None:
@@ -51,7 +54,12 @@ def main(
         if bpm is None:
             bpm = float(Path(bpm_file).read_text().strip())
         n = inject_beat_markers(
-            midi_path, out_path, bpm=bpm, quarters_per_page=quarters_per_page,
+            midi_path,
+            out_path,
+            bpm=bpm,
+            quarters_per_page=quarters_per_page,
+            aligned_path=aligned_path,
+            note_window_margin=note_window_margin,
         )
     print(f"injected {n} page markers ({mode}) -> {out_path}")
 

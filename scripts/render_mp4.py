@@ -215,6 +215,35 @@ def _hide_minmax_columns(app) -> None:
         app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k] = _replace_pos(an, OFF, key="colors")
 
 
+def _hide_notes_without_visible_lyrics(app) -> None:
+    """Only draw pitch bars while a lyric image is actually visible.
+
+    MID2BAR pages are time windows, so upcoming notes can appear several
+    seconds before the next lyric line starts. For karaoke exports that looks
+    like pitch guidance in an instrumental/no-lyric gap. Reuse MID2BAR's own
+    lyric timing model so the note layer follows the same visibility condition
+    as draw_lyrics().
+    """
+    original_draw_notes = app.draw_notes
+
+    def has_visible_lyrics() -> bool:
+        for lyric in app.lyrics:
+            for typ in app.lyrics_types:
+                part = lyric.get(typ)
+                if not part:
+                    continue
+                if part["start"] <= app.current_time < part["end"]:
+                    return True
+        return False
+
+    def draw_notes_when_lyrics_visible():
+        if has_visible_lyrics():
+            return original_draw_notes()
+        return None
+
+    app.draw_notes = draw_notes_when_lyrics_visible
+
+
 @click.command()
 @click.option("--audio", "audio_path", type=click.Path(exists=True, dir_okay=False), required=True,
               help="instrumental.wav for playback (audio mux into output mp4).")
@@ -382,6 +411,7 @@ def main(
 
     _disable_particles(app)
     _hide_minmax_columns(app)
+    _hide_notes_without_visible_lyrics(app)
     _zero_lag_time(app)
     _press_space_after_init()
     app.run()
