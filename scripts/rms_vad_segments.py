@@ -42,9 +42,15 @@ DEFAULTS = {
     "hop_length": 512,      # ~32 ms  @ 16 kHz
     "top_db": 40.0,         # voiced if frame is within top_db of the loud ref
     "min_voiced_dur": 0.15,  # drop voiced blips shorter than this (transients)
-    "merge_gap": 0.6,       # merge phrases separated by a silence < this
+    "merge_gap": 0.4,       # merge phrases separated by a silence < this
     "pad": 0.25,            # widen each segment so onsets/offsets aren't clipped
-    "max_len": 28.0,        # keep under Whisper's 30 s window
+    # max_len was 28 s (just under Whisper's window) but chidori showed that long
+    # merged segments (a 19 s phrase block) push Whisper large-v3 into credits-text
+    # hallucination ("作詞・作曲… 初音ミク") on dense/repetitive lyrics, collapsing
+    # whole lines.  12 s is the 3-song-validated trade-off (2026-06-05): fixes
+    # chidori (23 zero-dur sung chars -> 0), improves tuki-zero, neutral on haru
+    # except one already-known butted-boundary line.  See MEMORY.md.
+    "max_len": 12.0,
     "min_cut_frac": 0.4,    # a cut never produces a left piece < this * max_len
 }
 
