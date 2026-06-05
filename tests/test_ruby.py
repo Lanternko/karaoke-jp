@@ -36,6 +36,8 @@ class FakeTagger:
             rows = [("山田", "ヤマダ", "名詞"), ("君", "クン", "接尾辞")]
         elif text == "君":
             rows = [("君", "キミ", "代名詞")]
+        elif text == "私":
+            rows = [("私", "ワタクシ", "代名詞")]
         else:
             rows = [(text, text, "名詞")]
 
@@ -78,4 +80,20 @@ def test_tokenize_line_keeps_true_suffix_after_noun() -> None:
     assert [(tok.surface, tok.reading, tok.pos) for tok in line.tokens] == [
         ("山田", "やまだ", "名詞"),
         ("君", "くん", "接尾辞"),
+    ]
+
+
+def test_tokenize_line_prefers_lyric_default_for_watashi() -> None:
+    line = _tokenize_line(FakeTagger(), "私", {})
+
+    assert [(tok.surface, tok.reading, tok.pos) for tok in line.tokens] == [
+        ("私", "わたし", "代名詞"),
+    ]
+
+
+def test_tokenize_line_allows_override_for_watakushi() -> None:
+    line = _tokenize_line(FakeTagger(), "私", {"私": "わたくし"})
+
+    assert [(tok.surface, tok.reading, tok.pos) for tok in line.tokens] == [
+        ("私", "わたくし", "代名詞"),
     ]

@@ -24,6 +24,11 @@ _KANA_RE = re.compile(r"[぀-ゟ゠-ヿ]")
 # Whitespace (incl. full-width).
 _WS_RE = re.compile(r"[\s　]+")
 _SUFFIX_HOST_POS = {"名詞", "代名詞", "接尾辞"}
+_LYRIC_DEFAULT_READINGS = {
+    # UniDic defaults the pronoun 私 to the formal わたくし.  Pop lyrics
+    # overwhelmingly sing it as わたし; per-song overrides can still opt out.
+    "私": "わたし",
+}
 
 
 def has_kanji(s: str) -> bool:
@@ -75,6 +80,9 @@ def _token_from_word(word, override: dict[str, str]) -> Token | None:
     if surface in override:
         reading_hira = override[surface]
         kana_only = not has_kanji(surface)
+    elif surface in _LYRIC_DEFAULT_READINGS and pos == "代名詞":
+        reading_hira = _LYRIC_DEFAULT_READINGS[surface]
+        kana_only = False
     elif has_kanji(surface):
         kana = getattr(feat, "kana", None) or getattr(feat, "pron", None)
         reading_hira = kata_to_hira(kana) if kana else None
