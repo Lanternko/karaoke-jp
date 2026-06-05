@@ -307,7 +307,7 @@ def build_app():
                 label="人聲比例 (%)",
                 minimum=0,
                 maximum=100,
-                value=35,
+                value=30,
                 step=5,
             )
             background_mode = gr.Radio(

@@ -159,7 +159,7 @@ def score_melody(
 )
 @click.option(
     "--vocal-ratio",
-    default=0.20,
+    default=0.30,
     type=float,
     show_default=True,
     help="Vocal volume as a fraction of instrumental (0.0=mute, 1.0=equal).",
@@ -170,7 +170,7 @@ def mix(
     out_path: str,
     vocal_ratio: float,
 ) -> None:
-    """M5: Blend instrumental + vocals at VOCAL_RATIO (default 20 %)."""
+    """M5: Blend instrumental + vocals at VOCAL_RATIO (default 30 %)."""
     from .mix import mix_vocals
 
     mix_vocals(instrumental_path, vocals_path, out_path, vocal_ratio=vocal_ratio)

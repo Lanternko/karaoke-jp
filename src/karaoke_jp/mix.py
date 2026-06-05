@@ -3,7 +3,7 @@
 Usage
 -----
     from karaoke_jp.mix import mix_vocals
-    mix_vocals("instrumental.wav", "vocals.wav", "mixed.wav", vocal_ratio=0.20)
+    mix_vocals("instrumental.wav", "vocals.wav", "mixed.wav", vocal_ratio=0.30)
 
 The output is a stereo wav suitable for handing directly to MID2BAR-Player as
 the ``--audio`` argument.  The instrumental is kept at full volume; vocals are
@@ -20,7 +20,7 @@ def mix_vocals(
     vocals_path: str | Path,
     out_path: str | Path,
     *,
-    vocal_ratio: float = 0.20,
+    vocal_ratio: float = 0.30,
 ) -> Path:
     """Blend instrumental + vocals and write a WAV file.
 
@@ -33,7 +33,7 @@ def mix_vocals(
     out_path:
         Destination path for the mixed WAV.
     vocal_ratio:
-        0.0 → pure instrumental, 1.0 → equal loudness, 0.2 → 20 % vocal.
+        0.0 → pure instrumental, 1.0 → equal loudness, 0.3 → 30 % vocal.
 
     Returns
     -------

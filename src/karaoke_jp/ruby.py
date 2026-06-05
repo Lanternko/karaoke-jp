@@ -23,6 +23,7 @@ _KANJI_RE = re.compile(r"[㐀-鿿豈-﫿]")
 _KANA_RE = re.compile(r"[぀-ゟ゠-ヿ]")
 # Whitespace (incl. full-width).
 _WS_RE = re.compile(r"[\s　]+")
+_SUFFIX_HOST_POS = {"名詞", "代名詞", "接尾辞"}
 
 
 def has_kanji(s: str) -> bool:
@@ -96,8 +97,38 @@ def _tokenize_phrase(tagger, text: str, override: dict[str, str]) -> list[Token]
     for word in tagger(text):
         token = _token_from_word(word, override)
         if token is not None:
+            if _should_retag_suffix_as_standalone(token, tokens, override):
+                token = _retag_standalone(tagger, token, override)
             tokens.append(token)
     return tokens
+
+
+def _should_retag_suffix_as_standalone(
+    token: Token,
+    previous_tokens: list[Token],
+    override: dict[str, str],
+) -> bool:
+    if token.surface in override:
+        return False
+    if token.pos != "接尾辞" or not has_kanji(token.surface):
+        return False
+    if previous_tokens and previous_tokens[-1].pos in _SUFFIX_HOST_POS:
+        return False
+    return True
+
+
+def _retag_standalone(tagger, token: Token, override: dict[str, str]) -> Token:
+    standalone_words = [
+        word for word in tagger(token.surface)
+        if word.surface and not _WS_RE.fullmatch(word.surface)
+    ]
+    if len(standalone_words) != 1 or standalone_words[0].surface != token.surface:
+        return token
+
+    standalone = _token_from_word(standalone_words[0], override)
+    if standalone is None or standalone.pos == "接尾辞":
+        return token
+    return standalone
 
 
 def _tokenize_line(tagger, text: str, override: dict[str, str]) -> Line:

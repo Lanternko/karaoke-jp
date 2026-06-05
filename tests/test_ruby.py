@@ -28,6 +28,14 @@ class FakeTagger:
             rows = [("君", "キミ", "代名詞"), ("の", "ノ", "助詞"), ("ため", "タメ", "名詞")]
         elif text == "僕のため":
             rows = [("僕", "ボク", "代名詞"), ("の", "ノ", "助詞"), ("ため", "タメ", "名詞")]
+        elif text == "行こう海を":
+            rows = [("行こう", "イコウ", "動詞"), ("海", "カイ", "接尾辞"), ("を", "ヲ", "助詞")]
+        elif text == "海":
+            rows = [("海", "ウミ", "名詞")]
+        elif text == "山田君":
+            rows = [("山田", "ヤマダ", "名詞"), ("君", "クン", "接尾辞")]
+        elif text == "君":
+            rows = [("君", "キミ", "代名詞")]
         else:
             rows = [(text, text, "名詞")]
 
@@ -52,3 +60,22 @@ def test_tokenize_line_treats_whitespace_as_phrase_boundary() -> None:
             ("の", None, "助詞"),
             ("ため", None, "名詞"),
         ]
+
+
+def test_tokenize_line_retags_false_suffix_after_verb_as_standalone() -> None:
+    line = _tokenize_line(FakeTagger(), "行こう海を", {})
+
+    assert [(tok.surface, tok.reading, tok.pos) for tok in line.tokens] == [
+        ("行こう", "いこう", "動詞"),
+        ("海", "うみ", "名詞"),
+        ("を", None, "助詞"),
+    ]
+
+
+def test_tokenize_line_keeps_true_suffix_after_noun() -> None:
+    line = _tokenize_line(FakeTagger(), "山田君", {})
+
+    assert [(tok.surface, tok.reading, tok.pos) for tok in line.tokens] == [
+        ("山田", "やまだ", "名詞"),
+        ("君", "くん", "接尾辞"),
+    ]

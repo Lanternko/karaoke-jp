@@ -27,7 +27,7 @@ OUT_DIR = Path("outputs")
 MELODY_BACKEND = os.environ.get("MELODY_BACKEND", "rmvpe")
 
 try:
-    VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", "0.35"))
+    VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", "0.30"))
 except ValueError as exc:
     raise ValueError("VOCAL_RATIO must be a float in [0, 1].") from exc
 if not (0.0 <= VOCAL_RATIO <= 1.0):
@@ -269,7 +269,7 @@ def _background_arg(wc):
 rule render:
     """M4c/M5: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac).
 
-    Uses mixed.wav (instrumental + 20 % guide vocal) as the audio track.
+    Uses mixed.wav (instrumental + 30 % guide vocal) as the audio track.
     Auto-detects ``songs/<song>/background.{mp4,webm,png,jpg,jpeg}`` and
     feeds it as the rendered backdrop; if absent, the bundled MID2BAR blue
     gradient is used.
