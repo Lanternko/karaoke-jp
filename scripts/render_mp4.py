@@ -233,7 +233,9 @@ def _hide_notes_without_visible_lyrics(app) -> None:
                 if not part:
                     continue
                 if part["start"] <= app.current_time < part["end"]:
-                    return True
+                    for x_wipe in part.get("x_wipes", []):
+                        if x_wipe[0] <= app.current_time < x_wipe[1]:
+                            return True
         return False
 
     def draw_notes_when_lyrics_visible():

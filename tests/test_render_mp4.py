@@ -23,7 +23,7 @@ class FakeApp:
         ]
         self.lyrics = [
             {
-                typ: {"start": 10.0, "end": 12.0}
+                typ: {"start": 10.0, "end": 12.0, "x_wipes": [[10.2, 11.8, 0, 100]]}
                 for typ in self.lyrics_types
             }
         ]
@@ -42,6 +42,10 @@ def test_hide_notes_without_visible_lyrics_uses_lyric_visibility() -> None:
     assert app.calls == 0
 
     app.current_time = 10.0
+    assert app.draw_notes() is None
+    assert app.calls == 0
+
+    app.current_time = 10.2
     assert app.draw_notes() == "drawn"
     assert app.calls == 1
 

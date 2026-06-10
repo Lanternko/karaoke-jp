@@ -257,7 +257,7 @@ def inject_beat_markers(
     out_path: str | Path,
     *,
     bpm: float,
-    quarters_per_page: int = 8,
+    quarters_per_page: int = 10,
     aligned_path: str | Path | None = None,
     note_window_margin: float = 0.25,
 ) -> int:
@@ -265,8 +265,8 @@ def inject_beat_markers(
 
     Use this when you want every page on the bar display to render at the
     same pixels-per-quarter scale (instead of phrase-stretching). Each page
-    spans exactly ``quarters_per_page`` quarter notes — at 95.7 BPM with
-    quarters_per_page=8 that's about 5.0 seconds per page.
+    spans exactly ``quarters_per_page`` quarter notes. A larger value shows
+    more time in the same bar area, so note bars render narrower.
 
     Lyrics layout is unaffected: it reads from the .lrc file directly, not
     from MIDI markers. So the page boundaries here only control the bar

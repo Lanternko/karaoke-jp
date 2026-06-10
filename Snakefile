@@ -7,8 +7,9 @@
 # hashes are missing; default trigger set would force a full rebuild on
 # every invocation. See CLAUDE.md "做事方式".)
 #
-# DAG: separate -> melody -> {tokenize, asr -> align} -> {midi_markers,
-#      export_lrc} -> render. Each stage runs in its own venv (see
+# DAG: separate -> {melody, rmvpe_f0, pyin_f0} -> {tokenize, asr -> align}
+#      -> midi_markers -> fix_octaves -> render (+ export_lrc, mix branches).
+#      Each stage runs in its own venv (see
 #      CLAUDE.md "single source of truth"). Rules invoke the venv binary
 #      by absolute path so reproducibility does not depend on the caller's
 #      PATH or which venv they activated first.
@@ -60,10 +61,12 @@ rule all:
 # bare-name commands like `karaoke-jp` or `python` have.
 KARAOKE_BIN = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "karaoke-jp")
 MAIN_PY = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "python")
+MELODY_PY = str(Path.home() / "venvs" / "karaoke-jp-melody" / "bin" / "python")
 LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
+RMVPE_CKPT = str(Path("third_party") / "SOME" / "pretrained" / "rmvpe" / "model.pt")
 LRC_BLOCK_SIZE = 2  # 2 phrases per lyric block → MID2BAR alternates row 2/3 (上下)
-QUARTERS_PER_PAGE = 8  # bar-display fixed scale: 8 quarter notes per page → ≈5s @ 96 BPM
+QUARTERS_PER_PAGE = 10  # bar-display fixed scale: 10 quarter notes per page → narrower pitch bars
 MID2BAR_APP_SETTINGS = str(Path("config") / "mid2bar_settings.json")
 
 
@@ -110,6 +113,32 @@ rule melody:
     shell:
         f"{KARAOKE_BIN} melody {{input.vocals:q}} -o {{output.midi:q}} "
         f"--backend {{params.backend}} --instrumental {{input.instrumental:q}}"
+
+
+rule rmvpe_f0:
+    """M2c: vocals -> RMVPE F0 cache (.npz). Primary estimator for the
+    consensus octave fix (fix_octaves). Same separated vocals as melody."""
+    input:
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+    output:
+        npz=str(OUT_DIR / "{song}" / "rmvpe_f0.npz"),
+    resources:
+        gpu=1,
+    shell:
+        f"{MELODY_PY} scripts/extract_rmvpe_f0.py "
+        f"--wav {{input.vocals:q}} --model {RMVPE_CKPT} --out {{output.npz:q}}"
+
+
+rule pyin_f0:
+    """M2d: vocals -> pYIN F0 cache (.npz). Second estimator; vetoes a shift
+    when it disagrees with RMVPE (late fusion). CPU-only (librosa)."""
+    input:
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+    output:
+        npz=str(OUT_DIR / "{song}" / "pyin_f0.npz"),
+    shell:
+        f"{MELODY_PY} scripts/extract_pyin_f0.py "
+        f"--wav {{input.vocals:q}} --out {{output.npz:q}}"
 
 
 rule quantize_melody:
@@ -231,6 +260,100 @@ rule midi_markers:
         f"--aligned {{input.aligned:q}}"
 
 
+rule fix_octaves:
+    """M4b2: melody_markers.mid -> melody_markers.octavefix.mid.
+
+    Canonical late-fusion octave repair (unguarded consensus + same-pitch
+    merge, 2026-06-06): shift only notes RMVPE *and* pYIN agree are a full
+    octave off, then merge fragments. Rewrites only the note track, so the
+    page-marker track stays intact for the renderer. Runs after midi_markers
+    (post note-window gating); midi_timing is upstream and untouched.
+    """
+    input:
+        midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
+        rmvpe=str(OUT_DIR / "{song}" / "rmvpe_f0.npz"),
+        pyin=str(OUT_DIR / "{song}" / "pyin_f0.npz"),
+    output:
+        midi=str(OUT_DIR / "{song}" / "melody_markers.octavefix.mid"),
+    shell:
+        f"{MAIN_PY} scripts/fix_pitch_octaves.py {{input.midi:q}} "
+        f"-o {{output.midi:q}} "
+        f"--rmvpe-f0 {{input.rmvpe:q}} --pyin-f0 {{input.pyin:q}}"
+
+
+rule basicpitch:
+    """Score-chain input: BasicPitch note events from the separated vocals.
+
+    Second acoustic opinion for bp_hybrid_relabel (fixes RMVPE semitone
+    undershoot on sustained chorus notes). Opt-in: only built when a
+    score_chain target is requested."""
+    input:
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+    output:
+        csv=str(OUT_DIR / "{song}" / "basic_pitch" / "vocals_basic_pitch.csv"),
+    shell:
+        f"{MAIN_PY} scripts/run_basicpitch.py "
+        f"--vocals {{input.vocals:q}} "
+        f"--out-dir {str(OUT_DIR)}/{{wildcards.song}}/basic_pitch"
+
+
+rule score_chain:
+    """Canonical audio-only score chain (validated 2026-06-10 on Chidori
+    humangold + byoushin cross-reference; flags pinned inside
+    scripts/run_score_chain.py):
+
+        octavefix -> bp_hybrid_relabel(d1/s0.02/r1.2)
+                  -> score_note_postfix(refine/extend/shakuri/fill)
+                  -> add_midi_markers
+
+    OPT-IN target (melody_markers.scorefix.mid). The render rule still
+    consumes melody_markers.octavefix.mid by default because tuki-zero /
+    bocchi-guitar were never evaluated under this chain; flip a song's render
+    input only after checking its output. Note: the refit-q70 mora step used
+    in the Chidori experiments is still a manual sidecar — this rule applies
+    the validated bp+postfix stages to the standard chain's octavefix MIDI."""
+    input:
+        midi=str(OUT_DIR / "{song}" / "melody_markers.octavefix.mid"),
+        bp=str(OUT_DIR / "{song}" / "basic_pitch" / "vocals_basic_pitch.csv"),
+        f0=str(OUT_DIR / "{song}" / "rmvpe_f0.npz"),
+        aligned=str(OUT_DIR / "{song}" / "aligned_midi.json"),
+        bpm=str(OUT_DIR / "{song}" / "melody_quantized.mid.bpm.txt"),
+    output:
+        midi=str(OUT_DIR / "{song}" / "melody_markers.scorefix.mid"),
+    shell:
+        f"{MAIN_PY} scripts/run_score_chain.py "
+        f"--midi {{input.midi:q}} --basicpitch-csv {{input.bp:q}} "
+        f"--f0 {{input.f0:q}} --aligned {{input.aligned:q}} "
+        f"--bpm-file {{input.bpm:q}} --quarters-per-page {QUARTERS_PER_PAGE} "
+        f"--out {{output.midi:q}}"
+
+
+rule game_chain:
+    """GAME-backbone melody (validated 2026-06-10 on Chidori humangold +
+    byoushin; config pinned in scripts/run_game_chain.py):
+
+        GAME large (-l ja) -> postfix(extend) -> melody_union(fallback =
+        score_chain output) -> add_midi_markers
+
+    Chidori numbers: exact .728 / note-level 72.8% vs the classic chain's
+    .651 / 60.6%. OPT-IN target (melody_markers.gamescore.mid); flip a
+    song's render input only after a visual check."""
+    input:
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+        fallback=str(OUT_DIR / "{song}" / "melody_markers.scorefix.mid"),
+        f0=str(OUT_DIR / "{song}" / "rmvpe_f0.npz"),
+        aligned=str(OUT_DIR / "{song}" / "aligned_midi.json"),
+        bpm=str(OUT_DIR / "{song}" / "melody_quantized.mid.bpm.txt"),
+    output:
+        midi=str(OUT_DIR / "{song}" / "melody_markers.gamescore.mid"),
+    shell:
+        f"{MAIN_PY} scripts/run_game_chain.py "
+        f"--vocals {{input.vocals:q}} --fallback-midi {{input.fallback:q}} "
+        f"--f0 {{input.f0:q}} --aligned {{input.aligned:q}} "
+        f"--bpm-file {{input.bpm:q}} --quarters-per-page {QUARTERS_PER_PAGE} "
+        f"--out {{output.midi:q}}"
+
+
 rule mix:
     """M5: Blend instrumental + vocals at a configurable vocal ratio.
 
@@ -276,7 +399,7 @@ rule render:
     """
     input:
         audio=str(OUT_DIR / "{song}" / "mixed.wav"),
-        midi=str(OUT_DIR / "{song}" / "melody_markers.mid"),
+        midi=str(OUT_DIR / "{song}" / "melody_markers.octavefix.mid"),
         lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
     output:
         mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),

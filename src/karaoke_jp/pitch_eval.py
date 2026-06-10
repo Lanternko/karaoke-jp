@@ -8,6 +8,7 @@ in-character regions from transitions.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Self
 
@@ -40,14 +41,17 @@ class F0Track:
             raise ValueError(f"{path} has mismatched f0/times shapes: {f0.shape} vs {times.shape}")
         return cls(times=times, f0_hz=f0)
 
-    @property
+    @cached_property
     def hop_seconds(self) -> float:
         if self.times.size < 2:
             return 0.0
         return float(np.median(np.diff(self.times)))
 
-    @property
+    @cached_property
     def midi(self) -> np.ndarray:
+        # cached_property writes to instance __dict__ directly, which is
+        # compatible with frozen dataclasses; callers access .midi once per
+        # note/window, so recomputing the full-track log2 each time is O(N*M).
         midi = np.full(self.f0_hz.shape, np.nan, dtype=np.float64)
         voiced = np.isfinite(self.f0_hz) & (self.f0_hz > 0)
         midi[voiced] = 69.0 + 12.0 * np.log2(self.f0_hz[voiced] / 440.0)

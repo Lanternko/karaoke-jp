@@ -110,6 +110,39 @@ def test_shift_octave_notes_by_f0_consensus_vetoes_long_char_span_increase() -> 
     assert shifted == notes
 
 
+def test_consensus_unguarded_fixes_octave_cluster_that_guard_would_block() -> None:
+    """Canonical octave fix is *unguarded* (2026-06-06 ablation).
+
+    A run of octave-high notes sharing one long char window must be fully
+    corrected, not left half-shifted.  The opt-in span guard instead blocks
+    every shift, leaving the whole cluster an octave off (the chidori failure
+    mode: residuals float an octave above the F0 contour).
+    """
+    notes = [
+        MidiNote(0.0, 0.2, 72),
+        MidiNote(0.2, 0.4, 72),
+        MidiNote(0.4, 0.6, 72),
+    ]
+    f0 = F0Track(
+        times=np.array([0.05, 0.15, 0.25, 0.35, 0.45, 0.55]),
+        f0_hz=np.array([_hz(60)] * 6),
+    )
+    long_window = [TimeWindow(0.0, 0.6, "長", 0)]
+
+    # default (unguarded): the whole cluster comes down an octave and merges
+    unguarded, n_unguarded = shift_octave_notes_by_f0_consensus(notes, primary=f0, veto=f0)
+    assert n_unguarded == 3
+    assert [n.pitch for n in unguarded] == [60, 60, 60]
+    assert merge_adjacent_same_pitch_notes(unguarded) == [MidiNote(0.0, 0.6, 60)]
+
+    # opt-in span guard: every shift blocked -> cluster stays an octave off
+    guarded, n_guarded = shift_octave_notes_by_f0_consensus(
+        notes, primary=f0, veto=f0, span_guard_windows=long_window
+    )
+    assert n_guarded == 0
+    assert [n.pitch for n in guarded] == [72, 72, 72]
+
+
 def test_merge_adjacent_same_pitch_notes_closes_tiny_gaps() -> None:
     notes = [
         MidiNote(0.0, 0.2, 64),

@@ -29,7 +29,7 @@ from karaoke_jp.midi_markers import inject_beat_markers, inject_line_markers
 @click.option("--bpm", type=float, default=None, help="(--mode beat) song BPM.")
 @click.option("--bpm-file", type=click.Path(exists=True, dir_okay=False),
               default=None, help="(--mode beat) sidecar with BPM as a single float.")
-@click.option("--quarters-per-page", default=8, type=int, show_default=True,
+@click.option("--quarters-per-page", default=10, type=int, show_default=True,
               help="(--mode beat) quarter notes per page = visual horizontal scale.")
 @click.option("--note-window-margin", default=0.25, type=float, show_default=True,
               help="(--mode beat with --aligned) seconds of padding around lyric windows when filtering notes.")
