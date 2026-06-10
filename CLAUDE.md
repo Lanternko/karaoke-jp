@@ -16,6 +16,12 @@
 
 下一步：**M6 Snakemake 批次** / **M7 Yomikata + override JSON**（M5 已完成 20% vocal mix，可選多音量版）。
 
+**音高里程碑（2026-06-10）**：樂譜層音高推論整輪完成 — chidori 全驗證 gold（sheet+人耳）、
+雙歌 benchmark、canonical 雙鏈（classic scorefix + GAME union）。chidori note-level
+52.6%→**72.8%**。完整方法論與計分板見 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)；
+不可再生 gold 已存 tracked 的 `gold/`。待 user 目檢 `outputs/chidori/karaoke...gameunion.mp4`
+決定顯示預設是否切 GAME 鏈。
+
 ## M8 GUI（已實作 2026-05-02）
 **目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（預設 `127.0.0.1:7860`，**不開 share**；`--host 0.0.0.0` 才接外網）。
 
@@ -34,9 +40,10 @@
 
 **不在 GUI scope**：LLM 修歌詞 / LLM 推 ruby / Whisper transcribe-only 模式 / 多音量版輸出 / share=True / 多歌並行。詳見 NEVER。
 
-## 三件套
+## 四件套
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
 - [MEMORY.md](MEMORY.md) — 關鍵決策、踩坑、為什麼選 X 不選 Y
+- [docs/pitch-benchmark.md](docs/pitch-benchmark.md) — 音高 gold 方法論、benchmark、canonical 鏈
 - 本檔（CLAUDE.md）— 工作指南
 
 ## 關鍵決策（不要再爭論）
@@ -65,6 +72,8 @@
 - **不要用 `app.particles = []` 關 MID2BAR 粒子。** `update_particles()` 每 frame 把三個 list 重新 reassign 成普通 list，patch 只活一個 frame。要 patch 的是 method：`app._update_particle_list = lambda particle_list, screen: []`。
 - **不要為了通過 MID2BAR 的 ruby time 檢查設 char.end = next_char.start。** MID2BAR `apply_rubies_to_result` 用 `time_end ≤ ruby.end` 嚴格 contain，`time_end` 是 body 內 lyric 之後的下一個 time tag。@Ruby end 必須涵蓋這個 next-body-tag 時間（lookup 到下一 char.start，不是用 segment 自己的 char.end，因為 midi_timing 把 char.end 砍到 note_off 留了吐氣 gap）。
 - **GUI 不要引入任何 LLM 步驟**（修歌詞、推 ruby、補 timing、整理 prompt）。Why: user 反映「成果不穩定，且通常要付費 API 才有像樣效果」。既有 fugashi+UniDic+forced alignment 已夠用；本機模型（demucs/roformer/whisper/cectc）不算 LLM，那些保留無妨。
+- **不要對 YT karaoke guide 調參或把它當 gold。** 實測它對人耳/sheet 驗證 gold 只有 76.6% exact（F#4×44、B3×22 等家族性錯誤）。也**不要把「guide 與 F0 tracker 一致」當獨立證據** — 兩者被同一種演唱偏差（唱平/しゃくり）同向帶偏，B3 家族 22 顆因此誤判過。信任層級：鋼琴譜/人耳 >> guide ≈ F0。詳見 docs/pitch-benchmark.md。
+- **不要把 GAME 直推原始混音**（chidori 實測 exact .48、八度錯 6.4%，README 的伴奏穩健性宣稱對密伴奏不成立）；**不要對 GAME 輸出套 refine-boundaries / absorb-shakuri**（實測有害 — 它的天然音符邊界比 mora grid 好）；GAME 的 align 模式不要當主旋律來源（強制 mora 切分傷邊界）。
 - **不要重寫 user-lyrics → alignment ground truth 的 glue。已經 wired**：`scripts/run_asr.py --lyrics lyrics.txt` 把開頭當 initial_prompt 偏置 ASR；`scripts/align_lyrics.py` 跑 NW kana alignment 後輸出 `aligned.json`，**文字以 `lyrics.txt` 為準、timing 用 Whisper char ts 後續被 `midi_timing.py` 替換**。GUI 只需要把 user paste 寫進 `songs/<id>/lyrics.txt` 即可。
 
 ## 第一個 test case 怎麼選
@@ -79,7 +88,7 @@
 - Snakemake **永遠帶 `--rerun-triggers mtime`**（單純看時間戳）。Why: 2026-05-01 起 outputs/ 有部分檔案是手跑產生（沒寫 `.snakemake/metadata/` provenance hash），default trigger set 會以「missing metadata」為由全 rebuild。code 改動的偵測自己用 git，不靠 Snakemake hash。注意：Snakemake 9 trigger 名要 space-separated，不是 comma
 
 ## 環境隔離 — single source of truth
-**「主 venv + per-stage subprocess venv」是唯一正典**。**四個** venv：
+**「主 venv + per-stage subprocess venv」是唯一正典**。**五個** venv：
 
 | venv | 負責 | 為何分開 |
 |---|---|---|
@@ -87,6 +96,7 @@
 | `~/venvs/karaoke-jp-melody/` | M2 SOME inference | librosa<0.10 + numpy<2 跟主 venv 撞 |
 | `~/venvs/karaoke-jp-lyrics/` | M3 ASR + tokenize + align | faster-whisper 要 CUDA12 cuBLAS shim（pip 裝 nvidia-cublas-cu12 + LD_LIBRARY_PATH 指過去）|
 | `~/venvs/karaoke-jp-render/` | M4 render（MID2BAR-Player）| Pygame + opencv-python，跟主 venv 的 click 衝得到 |
+| `~/venvs/karaoke-jp-game/` | GAME note 轉譜（third_party/GAME）| **RTX 5090 (sm_120) 必須 torch cu129 wheel**，cu126 直接 CUDA kernel error |
 
 **已撤掉** `envs/*.yaml`（給 Snakemake `--use-conda` 用的 spec），原因：never wired to actual rules，三套 isolation story 並存只會 drift。M6 真要批次跑時可以再加回去（Snakemake conda envs 替 venv），但現在先收斂。
 
