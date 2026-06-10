@@ -64,3 +64,6 @@ tmp/aina-kakumei/*.bin
 tmp/aina-kakumei/*.mid
 tmp/aina-kakumei/*.mrc
 tmp/aina-kakumei/mymusic5/
+
+# Gold pitch references are irreplaceable — exempt from the global *.mid ignore
+!gold/**/*.mid
