@@ -11,11 +11,13 @@
 |---|---|---|
 | 四分音符寬度 | 恆定（頁寬 1760px ÷ 16 拍 = 110px/拍） | `--quarters-per-page 16` |
 | 音符時值 | snap 至 2^-2 ~ 2^2 四分音符（log 距離最近） | `quantize()` |
-| mora 間隙 | 恆 0.25 拍 — 唱再連貫也有縫 | `--gap-units 0.25` |
+| mora 間隙 | 恆 0.125 拍（~14px）— 「看得到就好」（v10 自 0.25 降，Kojek 嫌太疏） | `--gap-units 0.125` |
 | 換句間隙 | 恆 1.25 拍 | `--phrase-gap-units 1.25` |
 | 每頁 | 固定 16 拍跨度，1–3 句（通常 2），塞不下整句下頁 | packing |
 | 超大樂句切分 | **歌詞行邊界絕對優先**（aligned JSON），單行超頁才退回最大聲學空隙 | `split_oversized` |
 | 長休息 | 上句結束 +0.5s 翻頁 → 游標 park 在左緣 → 首音前 4 拍開始掃（倒數） | `--count-in-quarters 4` / `--flip-delay 0.5` |
+| 短句間翻頁 | 前句唱完即快翻（gap 的 25% 處），新頁音高可讀時間 ≈ gap 的 75% | quick-flip anchor |
+| 人耳音高修正 | per-song sidecar，**只動顯示層**，eval 候選永不碰 | `--pitch-patch overrides/<song>_pitch_patch.json` |
 | 變動項 | **游標速度**（Kojek 明示授權）；寬度零彈性 | warp |
 
 ## 資料流
@@ -49,6 +51,7 @@ melody_union 輸出（真實時間、未量化）
   --f0 outputs/<song>/rmvpe_f0.npz \
   --aligned outputs/<song>/aligned_midi.json \
   --bpm-file outputs/<song>/melody_quantized.mid.bpm.txt \
+  --pitch-patch overrides/<song>_pitch_patch.json \  # 有人耳修正 sidecar 才帶
   --out outputs/<song>/melody_markers.gamescore.mid
 # → 同時產出 melody_markers.gamescore.warp.json
 
@@ -83,10 +86,13 @@ SDL_VIDEODRIVER=dummy ~/venvs/karaoke-jp-render/bin/python scripts/render_mp4.py
 
 v1 固定拍頁(每句重頭) → pack 變長頁(縮放跳動 5.4×) → v6 固定預算頁(1.85×)
 → v8 display grid（縮放恆定、間隙標準化、warp 同步）
-→ **v9（Kojek 驗收回饋輪）**：sprite PADDING 契約修正（間隙真正可見）、
+→ v9（Kojek 驗收回饋輪）：sprite PADDING 契約修正（間隙真正可見）、
 行邊界優先切分（1:13「酔った振り」/1:52「吹く青風」不再被腰斬）、
-長休息 flip/park/count-in。中途實測否決：
-sprite 端內縮做間隙（縮放後剩 2px）、量化後直接渲染（吞音重疊）。
+長休息 flip/park/count-in、mid2csv BPM 2dp 對齊
+→ **v10（第二輪驗收回饋）**：mora 間隙 0.25→0.125 拍、短句間 quick-flip
+（前句唱完即翻頁，預覽時間 ≈ 75% gap）、--pitch-patch 人耳修正 sidecar
+（chidori 52.4s た Eb4→Eb3，鏡像句 140.3s union 本來就對是證據）。
+中途實測否決：sprite 端內縮做間隙（縮放後剩 2px）、量化後直接渲染（吞音重疊）。
 
 ## 坑（修 bug 前先讀）
 

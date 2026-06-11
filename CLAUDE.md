@@ -20,9 +20,12 @@
 雙歌 benchmark、canonical 雙鏈（classic scorefix + GAME union）。chidori note-level
 52.6%→**72.8%**。完整方法論與計分板見 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)；
 不可再生 gold 已存 tracked 的 `gold/`。
-**顯示系統 v8（2026-06-11）**：固定網格 + 時間 warp（[docs/display-grid.md](docs/display-grid.md)），
-成品 `karaoke...gameunion_v8grid.mp4` 待 Kojek 最終驗收後切 canonical；
-display 整輪尚未 commit — 接手先讀 [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md)。
+**顯示系統 v10（2026-06-11）**：固定網格 + 時間 warp + 兩輪 Kojek 驗收回饋全修
+（[docs/display-grid.md](docs/display-grid.md)：sprite PADDING 契約、行邊界切分、
+倒數四拍、quick-flip 預覽、--pitch-patch 人耳修正），
+成品 `karaoke...gameunion_v10grid.mp4` 待 Kojek 驗收後切 canonical；
+v8 輪已 commit（c4a2231/e0cceab/9de9b4e），v9/v10 輪改動待 commit —
+接手先讀 [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md)。
 
 ## M8 GUI（已實作 2026-05-02）
 **目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（預設 `127.0.0.1:7860`，**不開 share**；`--host 0.0.0.0` 才接外網）。
