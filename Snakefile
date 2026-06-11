@@ -214,19 +214,45 @@ rule midi_timing:
 
     SOME's melody.mid captures the actual note onset of every sung mora,
     giving much tighter timing than Whisper word timestamps.  The result is
-    written to aligned_midi.json; downstream rules (export_lrc, midi_markers)
-    consume that file so the final karaoke.lrc has syllable-accurate wipe.
+    written to aligned_midi.raw.json; line_end_repair then produces the
+    aligned_midi.json that downstream rules (export_lrc, midi_markers)
+    consume, so the final karaoke.lrc has syllable-accurate wipe.
     Lines with no notes in their Whisper window fall back to Whisper timing.
+
+    The first-mora gate + absorb-trailing flags are the single cross-song
+    boundary config validated on the chidori/haru-hikage/tuki-zero line gold
+    (start MAE 0.11-0.18s) and ear-checked on byoushin (2026-06-11, Kojek:
+    line starts/ends must be automatic — see docs/handoff-2026-06-11.md #4).
     """
     input:
         aligned=str(OUT_DIR / "{song}" / "aligned.json"),
         midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
     output:
-        aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.json"),
+        aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.raw.json"),
     shell:
         f"{MAIN_PY} scripts/midi_timing.py "
         f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} "
-        f"--out {{output.aligned_midi:q}}"
+        f"--out {{output.aligned_midi:q}} "
+        f"--first-mora-min-delay 0.05 --first-mora-gate-prev-gap 0.75 "
+        f"--first-mora-gate-lead-tolerance 0.08 --absorb-trailing-notes"
+
+
+rule line_end_repair:
+    """M3e: RMS-based line-end sustain capture (same validated config).
+
+    Extends a line's last char to cover the sung sustain tail the melody
+    MIDI under-reports; guards against eating into the next line.
+    """
+    input:
+        aligned=str(OUT_DIR / "{song}" / "aligned_midi.raw.json"),
+        vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+    output:
+        aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.json"),
+    shell:
+        f"{MAIN_PY} scripts/line_end_repair.py "
+        f"--aligned {{input.aligned:q}} --vocals {{input.vocals:q}} "
+        f"--tail-top-db 26 --next-guard 0.25 --tail-gap 0.12 "
+        f"-o {{output.aligned_midi:q}}"
 
 
 # M4 stages: lrc/marker prep run in the main venv (mido lives there); the
