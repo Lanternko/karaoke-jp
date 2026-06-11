@@ -57,7 +57,12 @@
   切點」計時噪聲（boundary 錯誤在 guide 計時區 11.4%、在 mora 計時窗 2.3%）。
 - humangold 的 patch 窗口時值抄 q70 mora 邊界（音高獨立驗證，但 q70 系邊界誤差在窗內不可見）。
 - byoushin 參考是 pYIN-anchored，**只用於 delta 方向**，不可宣稱絕對值。
-- 計畫中：MIREX COnP/COnPOff note metrics（onset 100ms / pitch 50 cents），可與文獻對話。
+- **MIREX note metrics 已落地**（`scripts/eval_note_metrics.py`，mir_eval；onset 100ms/pitch
+  50 cents/offset max(50ms, 0.2×dur)，`--merge-same-pitch` 正規化合併慣例）。
+  ⚠ 絕對值尚不可直接比文獻：gold 的 onset 來自 karaoke-bar 慣例而非歌唱 onset —
+  連 YT guide 對 gold 也只有 COnP 0.50。**當相對追蹤器用**（排名與 frame/note-level 一致）。
+  現值（merge 0.08）：chidori game_union COnP 0.413 / COnPOff 0.205；
+  byoushin 生產鏈 gamescore 0.457 / scorefix 0.369 / base 0.360。
 
 ## Canonical 鏈（Snakefile opt-in，flags pinned 在 driver 內）
 
@@ -88,11 +93,16 @@ latent-note Viterbi v1（−5pp）、pYIN 主軌（chidori −12pp）。
 | GAME | `third_party/GAME/`＋`~/venvs/karaoke-jp-game/`（**5090 必須 cu129**） | 部分 |
 | Render sidecar | `outputs/chidori/karaoke...gameunion.mp4` | gitignored |
 
+## 生產鏈跨歌實證（byoushin，2026-06-10）
+
+byoushin 上游（mora pipeline 含 aligned/midi_timing）前輪已建；只跑三條新規則即得：
+`octavefix base exact .382 → scorefix .438 → gamescore .529`（vs grid2 參考）—
+**單純請求 `melody_markers.gamescore.mid` target 就 +14.7pp**，雙鏈端到端生產驗證通過。
+
 ## 待辦（接力點）
 
 1. **User 目檢/試唱 gameunion render** → 決定 chidori 顯示預設是否切 GAME 鏈
-2. MIREX note metrics 落地
-3. byoushin 補 lyrics → mora pipeline（第二 benchmark 完整化）
-4. 第三首歌 gold（方法已熟，~半天/首）
-5. 殘餘人耳項：B 家族抽查（29.9–31.6）、低音 Eb3@52.0
-6. 更下一級：GAME fine-tune（屆時需做日文歌唱轉譜資料集 survey）
+2. 第三首歌 gold（方法已熟，~半天/首；哪首有鋼琴譜影片由 user 指定）
+3. 殘餘人耳項：B 家族抽查（29.9–31.6）、低音 Eb3@52.0
+4. note metrics 的文獻可比性：需要「歌唱 onset」版 gold（mora onset 可derive）
+5. 更下一級：GAME fine-tune（屆時需做日文歌唱轉譜資料集 survey）

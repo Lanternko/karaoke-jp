@@ -19,8 +19,10 @@
 **音高里程碑（2026-06-10）**：樂譜層音高推論整輪完成 — chidori 全驗證 gold（sheet+人耳）、
 雙歌 benchmark、canonical 雙鏈（classic scorefix + GAME union）。chidori note-level
 52.6%→**72.8%**。完整方法論與計分板見 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)；
-不可再生 gold 已存 tracked 的 `gold/`。待 user 目檢 `outputs/chidori/karaoke...gameunion.mp4`
-決定顯示預設是否切 GAME 鏈。
+不可再生 gold 已存 tracked 的 `gold/`。
+**顯示系統 v8（2026-06-11）**：固定網格 + 時間 warp（[docs/display-grid.md](docs/display-grid.md)），
+成品 `karaoke...gameunion_v8grid.mp4` 待 Kojek 最終驗收後切 canonical；
+display 整輪尚未 commit — 接手先讀 [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md)。
 
 ## M8 GUI（已實作 2026-05-02）
 **目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（預設 `127.0.0.1:7860`，**不開 share**；`--host 0.0.0.0` 才接外網）。
@@ -40,10 +42,12 @@
 
 **不在 GUI scope**：LLM 修歌詞 / LLM 推 ruby / Whisper transcribe-only 模式 / 多音量版輸出 / share=True / 多歌並行。詳見 NEVER。
 
-## 四件套
+## 文件套件
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
 - [MEMORY.md](MEMORY.md) — 關鍵決策、踩坑、為什麼選 X 不選 Y
 - [docs/pitch-benchmark.md](docs/pitch-benchmark.md) — 音高 gold 方法論、benchmark、canonical 鏈
+- [docs/display-grid.md](docs/display-grid.md) — 標準化 bar 顯示系統（grid + 時間 warp）
+- [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md) — 最新交接快照（未 commit 清單、待辦）
 - 本檔（CLAUDE.md）— 工作指南
 
 ## 關鍵決策（不要再爭論）
