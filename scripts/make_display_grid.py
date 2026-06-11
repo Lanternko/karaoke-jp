@@ -84,6 +84,34 @@ def quantize(notes: list[Note], *, quarter: float) -> list[Note]:
     return out
 
 
+def apply_pitch_patch(
+    notes: list[Note],
+    patches: list[dict],
+) -> tuple[list[Note], int, list[float]]:
+    """Ear-verified per-song pitch fixes, display layer ONLY (the eval
+    candidates stay untouched — patching them would game the benchmark).
+
+    Each patch: {"at": <real seconds>, "pitch": <midi>, optional "from":
+    <midi>, "note": <why>}. Applies to every note whose span contains `at`
+    (and matches "from" when given). Returns (notes, applied, missed_ats).
+    """
+    out = list(notes)
+    applied = 0
+    missed: list[float] = []
+    for patch in patches:
+        t = float(patch["at"])
+        pitch = int(patch["pitch"])
+        hit = False
+        for i, (s, e, p) in enumerate(out):
+            if s <= t < e and ("from" not in patch or p == int(patch["from"])):
+                out[i] = (s, e, pitch)
+                applied += 1
+                hit = True
+        if not hit:
+            missed.append(t)
+    return out, applied, missed
+
+
 def line_starts_from_aligned(aligned_path: str | Path) -> list[float]:
     aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
     starts = []
@@ -178,6 +206,10 @@ def layout_pages(
     (flip_delay after the previous note ends), a park anchor (cursor waits at
     the page's left edge), then the first note's own anchor sweeps the lead
     during the final count_in_quarters — the moving cursor IS the count-in.
+
+    Short inter-page gaps flip as soon as the previous note ends (quick-flip
+    anchor at 25% of the gap): the next page's pitches must be readable for
+    as much of the gap as possible, or the singer cannot sight-read the line.
     """
     disp_notes: list[Note] = []
     real_anchors: list[float] = [0.0]
@@ -194,11 +226,17 @@ def layout_pages(
     for p, page in enumerate(pages):
         cursor = p * span + lead
         first_real = notes[page[0][0]][0]
+        prev_real = real_anchors[-1]
+        avail = first_real - prev_real
         count_real = first_real - count_in_quarters * quarter
-        flip_real = real_anchors[-1] + flip_delay
+        flip_real = prev_real + flip_delay
         if count_real - flip_real > 0.25:
             add_anchor(flip_real, p * span)        # flip page early
             add_anchor(count_real, p * span + 1e-3)  # park until the count-in
+        elif avail > 0.12:
+            # quick flip right after the previous note ends; the remaining
+            # ~75% of the gap previews the new page before its first note
+            add_anchor(prev_real + max(0.08, 0.25 * avail), p * span)
         for k, ph in enumerate(page):
             if k:
                 cursor += pgap
@@ -224,8 +262,9 @@ def layout_pages(
 @click.option("--out-warp", type=click.Path(dir_okay=False), required=True)
 @click.option("--quarters-per-page", type=float, default=16.0, show_default=True,
               help="Fixed page span in quarters => fixed quarter width on screen.")
-@click.option("--gap-units", type=float, default=0.25, show_default=True,
-              help="Fixed gap between morae, in quarters.")
+@click.option("--gap-units", type=float, default=0.0625, show_default=True,
+              help="Fixed gap between morae, in quarters (Kojek: just visibly "
+              "separate, no wider — 0.25 and 0.125 both read as too sparse).")
 @click.option("--phrase-gap-units", type=float, default=1.25, show_default=True,
               help="Fixed (larger) gap between phrases, in quarters.")
 @click.option("--lead-units", type=float, default=0.5, show_default=True)
@@ -245,10 +284,14 @@ def layout_pages(
 @click.option("--flip-delay", type=float, default=0.5, show_default=True,
               help="Seconds after the last note of a page before the early "
               "page flip (long rests only).")
+@click.option("--pitch-patch", "pitch_patch_path",
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help="JSON list of ear-verified pitch fixes, display layer only "
+              "(never touches eval candidates). See apply_pitch_patch().")
 def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
          gap_units, phrase_gap_units, lead_units, phrase_split_gap, min_note,
          aligned_path, note_window_margin, note_tail_allowance,
-         count_in_quarters, flip_delay):
+         count_in_quarters, flip_delay, pitch_patch_path):
     # MID2BAR's mid2csv converts the tempo meta back to BPM with round(_, 2)
     # before deriving tick->seconds. Round HERE too, or the warp's display
     # seconds drift ~3e-5 relative vs the renderer's — ~5ms by song middle,
@@ -269,6 +312,14 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
 
     notes, dropped = drop_fragments(notes, min_note=min_note)
     notes, wiggles = absorb_wiggles(notes)
+
+    patched = 0
+    if pitch_patch_path:
+        patches = json.loads(Path(pitch_patch_path).read_text(encoding="utf-8"))
+        notes, patched, missed = apply_pitch_patch(notes, patches)
+        for t in missed:
+            click.echo(f"[display-grid] WARNING: pitch patch at {t:.2f}s matched no note")
+
     qnotes = quantize(notes, quarter=quarter)  # display widths; real times kept in `notes`
     line_of = assign_lines(notes, line_starts)
 
@@ -349,7 +400,8 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
 
     overlaps = sum(1 for a, b in zip(disp_notes, disp_notes[1:]) if b[0] < a[1] - 1e-6)
     click.echo(f"[display-grid] notes={len(disp_notes)} pages={len(pages)} "
-               f"dropped_fragments={dropped} wiggles_absorbed={wiggles} overlaps={overlaps} "
+               f"dropped_fragments={dropped} wiggles_absorbed={wiggles} "
+               f"pitch_patched={patched} overlaps={overlaps} "
                f"page_span={span:.2f}s quarter={quarter:.3f}s")
 
 

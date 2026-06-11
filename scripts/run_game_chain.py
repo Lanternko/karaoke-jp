@@ -47,9 +47,14 @@ def _run(args: list[str], cwd: Path | None = None) -> None:
 @click.option("--bpm-file", type=click.Path(exists=True, dir_okay=False), required=True)
 @click.option("--quarters-per-page", type=int, default=10, show_default=True)
 @click.option("--language", default="ja", show_default=True)
+@click.option("--pitch-patch", "pitch_patch_path",
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Ear-verified per-song display pitch fixes "
+              "(overrides/<song>_pitch_patch.json), forwarded to make_display_grid.")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
 def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
-         bpm_file: str, quarters_per_page: int, language: str, out_path: str) -> None:
+         bpm_file: str, quarters_per_page: int, language: str,
+         pitch_patch_path: str | None, out_path: str) -> None:
     vocals_p = Path(vocals).resolve()
     with tempfile.TemporaryDirectory(prefix="game-chain-") as tmp:
         tmp_p = Path(tmp)
@@ -73,10 +78,13 @@ def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
         # mora/phrase gaps, fixed page span; sync via the warp sidecar that
         # render_mp4 --time-warp consumes
         warp_path = str(Path(out_path).with_suffix(".warp.json"))
-        _run([sys.executable, str(SCRIPTS / "make_display_grid.py"),
-              "--midi", str(union_mid), "--bpm-file", bpm_file,
-              "--aligned", aligned_path,
-              "--out-midi", out_path, "--out-warp", warp_path])
+        grid_args = [sys.executable, str(SCRIPTS / "make_display_grid.py"),
+                     "--midi", str(union_mid), "--bpm-file", bpm_file,
+                     "--aligned", aligned_path,
+                     "--out-midi", out_path, "--out-warp", warp_path]
+        if pitch_patch_path:
+            grid_args += ["--pitch-patch", pitch_patch_path]
+        _run(grid_args)
     click.echo(f"[game-chain] wrote {out_path} (+ {warp_path}; render with --time-warp)")
 
 

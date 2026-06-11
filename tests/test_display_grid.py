@@ -125,13 +125,48 @@ def test_layout_count_in_parks_cursor_after_long_rest() -> None:
     assert warp(40.0) == pytest.approx(page2 + LEAD, abs=1e-6)
 
 
-def test_layout_no_count_in_anchor_when_rest_is_short() -> None:
-    # first note close to t=0 (no intro count-in), short rest between pages
+def test_layout_quick_flip_previews_next_page_early() -> None:
+    # first note close to t=0 (no intro count-in), 1.0s gap between pages:
+    # too short for park+count-in, long enough for a quick flip
     notes = [(1.0, 2.0, 60), (3.0, 4.0, 64)]
     qnotes = mdg.quantize(notes, quarter=QUARTER)
+    _disp, real, disp = _layout_simple(notes, qnotes, [[[0]], [[1]]])
+    # init + page1 intro quick-flip + 4 note anchors + page2 quick-flip + closing
+    assert len(real) == 1 + 1 + 4 + 1 + 1
+    import numpy as np
+    warp = lambda t: float(np.interp(t, real, disp))  # noqa: E731
+    # page 2 is on screen from 25% into the gap (2.25s), i.e. the singer can
+    # read the new page's pitches for ~75% of the gap before the first note
+    assert warp(2.25) == pytest.approx(SPAN, abs=1e-6)
+    assert warp(2.24) < SPAN
+
+
+def test_layout_seamless_when_gap_is_tiny() -> None:
+    notes = [(1.0, 2.0, 60), (2.05, 3.0, 64)]
+    qnotes = mdg.quantize(notes, quarter=QUARTER)
     _disp, real, _d = _layout_simple(notes, qnotes, [[[0]], [[1]]])
-    # only 0.0 + 2 anchors per note + closing anchor: no flip/park pair
-    assert len(real) == 1 + 4 + 1
+    # page-2 gap 0.05s < 0.12: no flip anchor for it (intro flip only)
+    assert len(real) == 1 + 1 + 4 + 1
+
+
+# ---------- apply_pitch_patch ----------
+
+def test_pitch_patch_applies_with_from_guard() -> None:
+    notes = [(52.36, 52.54, 63), (52.56, 53.05, 63)]
+    patched, applied, missed = mdg.apply_pitch_patch(
+        notes, [{"at": 52.4, "from": 63, "pitch": 51}])
+    assert applied == 1 and missed == []
+    assert patched[0] == (52.36, 52.54, 51)
+    assert patched[1][2] == 63  # second note untouched
+
+
+def test_pitch_patch_reports_misses() -> None:
+    notes = [(10.0, 11.0, 60)]
+    patched, applied, missed = mdg.apply_pitch_patch(
+        notes, [{"at": 99.0, "pitch": 51}, {"at": 10.5, "from": 61, "pitch": 51}])
+    assert applied == 0
+    assert missed == [99.0, 10.5]
+    assert patched == notes
 
 
 # ---------- renderer BPM contract ----------
