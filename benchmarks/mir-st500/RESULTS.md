@@ -62,3 +62,30 @@ COnPOff .411→.413, notes −1.2%); same-pitch merge is catastrophic
 (COn →.650) because real repeated same-pitch syllables get destroyed.
 MIR-ST500's spurious notes are mostly ≥150ms (median 330ms — separation
 bleed / ad-lib class), so min-dur helps less here than on Kiritan.
+
+## CE+CTC head-to-head (2026-06-12, same stems, N=82)
+
+Wang & Jang's pretrained `ctc_ce#3_98` (TASLP 2022) run on OUR Mel-Band-
+RoFormer stems via `benchmarks/ctc_ce_infer.py` (their Spleeter bypassed;
+(vocal, mixture) channels rebuilt from our vocals+instrumental — true
+same-front-end comparison). Their published number: COnPOff 0.574
+(N=100, Spleeter, +30ms-shifted GT).
+
+| system | GT | COn | COnP | COnPOff |
+|---|---|---|---|---|
+| **CE+CTC** | corrected | 0.779 | 0.728 | **0.554** |
+| CE+CTC | +30ms (their protocol) | 0.763 | 0.714 | 0.519 |
+| GAME raw -l zh | corrected | 0.732 | 0.655 | 0.411 |
+| GAME raw -l zh | +30ms | 0.748 | 0.671 | 0.453 |
+
+- **In-domain supervised wins decisively: +14pp COnPOff** — the learned
+  onset/offset supervision (the professor's point) is exactly where GAME
+  zero-shot loses; onsets are much closer (0.78 vs 0.73).
+- Our 0.554 vs their published 0.574 (different separation, N=82 vs 100)
+  — consistent; validates our harness and their result.
+- GT-convention sensitivity: the ±30ms label shift alone moves COnPOff by
+  ±4pp in OPPOSITE directions for the two systems (GAME agrees better with
+  +30ms, CE+CTC with unshifted) — at 50ms tolerance, annotation conventions
+  are a first-order term.
+- Dead-link retry (android client): 0/18 recovered — N=82 is final unless
+  the authors' cached audio is obtained by email.

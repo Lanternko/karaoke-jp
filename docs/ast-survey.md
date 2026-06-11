@@ -85,6 +85,7 @@ Token seq2seq:PerceiverTF · YourMT3+ · T3MS (TASLP'25)
 | 系統 | 年 | COn | COnP | COnPOff |
 |---|---|---|---|---|
 | **GAME raw -l zh(本研究,zero-shot,82/100 subset)** | 2026 | **73.2** | **65.5** | **41.1** |
+| **CE+CTC ckpt 重跑(本研究,同分離前端,N=82)** | 2026 | **77.9** | **72.8** | **55.4** |
 | ROSVOT(zero-shot,唯一可比) | 2024 | 72.1 | 65.9 | 47.4 |
 | EFN(資料集 baseline ✻) | 2021 | 75.4 | 66.6 | 45.8 |
 | JDC_note(teacher-student) | 2022 | 76.2 | 69.7 | 42.2 |
@@ -114,6 +115,14 @@ ISMIR2014 線:Ryynänen 30.8 → Tony 52.0 → Fu&Su 59.4 → VOCANO 68.4 →
 |---|---|---:|---:|---:|
 | GAME -l ja(raw GT) | 清唱,zero-shot,N=50 | **79.3** | 53.1 | 40.0 |
 | **GAME -l ja(移調校正 GT)** | 同上,GT 用 RMVPE 校正 | **79.4** | **57.9** | **43.8** |
+
+**2026-06-12 更新:GT 第二缺陷(per-song 時間平移 5/50 首,+150~340ms,
+RMVPE 交叉相關獨立確認)修正後,雙模型同框**:
+GAME -l ja **COn .862 / COnP .644 / COnPOff .502**;
+CE+CTC(中文訓,zero-shot)**.860 / .652 / .492** — 日文清唱上幾乎打平。
+MIR-ST500 上 CE+CTC(in-domain)則大勝 GAME zero-shot(COnPOff .554 vs .411,
+同分離前端重跑,與其發表值 .574 一致)。GT 慣例敏感度:±30ms 標籤平移使
+兩系統 COnPOff 各擺 ±4pp 且方向相反 — 50ms 容差下標註慣例是一階項。
 
 **深度診斷(關鍵):COn→COnP 暴跌不是 GAME 弱,是 Kiritan GT 有 per-song
 半音移調錯誤。** 證據鏈:(1) 全域調音 +2.0 cents(沒偏);(2) 八度錯只 1 顆;

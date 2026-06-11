@@ -87,3 +87,25 @@ Post-processing sweep (zero re-inference, on the prediction JSON):
   notes −5.7%) — adopted as the recommended cheap cleanup.
 - Remaining spurious notes are ≥150ms — not fragments but ornament/bleed-class;
   needs GAME's boundary/presence threshold sweep or learned (CTC/CE) boundaries.
+
+## Second GT defect class + CE+CTC head-to-head (2026-06-12)
+
+**Kiritan GT defect #2: per-song global TIME shift.** Both models collapsed
+on the same 5 songs (01/02/03/13/14, COn 0.09-0.27). RMVPE-voicing
+cross-correlation (model-independent, same spirit as Wang & Jang's +30ms
+MIR-ST500 label correction) finds those exact songs shifted +150..+340ms;
+correcting lifts e.g. song 03 COn 0.10→0.95. `gt_timefix.json` = transposition
++ time corrected.
+
+| system (N=50, double-corrected GT) | COn | COnP | COnPOff |
+|---|---|---|---|
+| GAME -l ja (zero-shot) | **0.862** | 0.644 | **0.502** |
+| CE+CTC (Mandarin-trained, zero-shot) | 0.860 | 0.652 | 0.492 |
+
+- **Essentially tied on Japanese a cappella** — GAME edges COn/COnPOff,
+  CE+CTC edges COnP. (Early single-song smoke test suggesting CE+CTC
+  collapse was the GT time-shift, not the model.)
+- Combined finding: Kiritan GT needed BOTH a pitch-transposition fix
+  (16/50 songs) and a time-shift fix (5/50) before either model could be
+  fairly scored — a fully automatic RMVPE-based GT audit protocol that
+  generalizes to any singing dataset.
