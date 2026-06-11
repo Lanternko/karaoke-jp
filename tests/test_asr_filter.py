@@ -64,3 +64,27 @@ def test_threshold_boundary() -> None:
     assert is_hallucinated_segment("ねえ" * 10)
     # 9 should not.
     assert not is_hallucinated_segment("ねえ" * 9)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ご視聴ありがとうございました",  # NIGHT DANCER 95.5s: emitted on a breathy ad-lib blip
+        "ご視聴ありがとうございます",
+        "チャンネル登録お願いします",
+        "コメント欄で教えてください",
+    ],
+)
+def test_stock_phrase_hallucinations_dropped(text: str) -> None:
+    assert is_hallucinated_segment(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ありがとう さよなら",  # plain thanks in a lyric is NOT the stock phrase
+        "登録した記憶を辿って",  # 登録 alone isn't チャンネル登録
+    ],
+)
+def test_stock_phrase_near_misses_kept(text: str) -> None:
+    assert not is_hallucinated_segment(text)

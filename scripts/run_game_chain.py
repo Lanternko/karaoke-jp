@@ -51,10 +51,15 @@ def _run(args: list[str], cwd: Path | None = None) -> None:
               type=click.Path(exists=True, dir_okay=False), default=None,
               help="Ear-verified per-song display pitch fixes "
               "(overrides/<song>_pitch_patch.json), forwarded to make_display_grid.")
+@click.option("--rms-segments", "rms_segments_path",
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help="rms_segments.json, forwarded to make_display_grid so "
+              "instrumental-break bleed notes never render.")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
 def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
          bpm_file: str, quarters_per_page: int, language: str,
-         pitch_patch_path: str | None, out_path: str) -> None:
+         pitch_patch_path: str | None, rms_segments_path: str | None,
+         out_path: str) -> None:
     vocals_p = Path(vocals).resolve()
     with tempfile.TemporaryDirectory(prefix="game-chain-") as tmp:
         tmp_p = Path(tmp)
@@ -84,6 +89,8 @@ def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
                      "--out-midi", out_path, "--out-warp", warp_path]
         if pitch_patch_path:
             grid_args += ["--pitch-patch", pitch_patch_path]
+        if rms_segments_path:
+            grid_args += ["--rms-segments", rms_segments_path]
         _run(grid_args)
     click.echo(f"[game-chain] wrote {out_path} (+ {warp_path}; render with --time-warp)")
 

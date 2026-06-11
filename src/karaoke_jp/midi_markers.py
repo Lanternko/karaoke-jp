@@ -94,6 +94,48 @@ def _lyric_windows(
     return _merge_windows(windows)
 
 
+def _voiced_windows(
+    segments_path: str | Path,
+    *,
+    pad: float = 0.3,
+) -> list[tuple[float, float]]:
+    """Voiced windows from rms_vad_segments.py output.
+
+    A misaligned lyric line can claim a window spanning an instrumental
+    break (e.g. an ad-lib line with no kana evidence stretched across a
+    16 s interlude); lyric windows alone then let separation-bleed ghost
+    notes through. RMS voiced segments are independent of alignment, so
+    intersecting with them kills interlude notes generically.
+    """
+    data = json.loads(Path(segments_path).read_text(encoding="utf-8"))
+    segments = data["segments"] if isinstance(data, dict) else data
+    raw: list[tuple[float, float]] = []
+    for seg in segments:
+        start, end = float(seg["start"]), float(seg["end"])
+        if end > start:
+            raw.append((max(0.0, start - pad), end + pad))
+    return _merge_windows(raw)
+
+
+def _intersect_windows(
+    a: list[tuple[float, float]],
+    b: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Intersect two sorted, merged window lists."""
+    out: list[tuple[float, float]] = []
+    i = j = 0
+    while i < len(a) and j < len(b):
+        start = max(a[i][0], b[j][0])
+        end = min(a[i][1], b[j][1])
+        if end > start:
+            out.append((start, end))
+        if a[i][1] < b[j][1]:
+            i += 1
+        else:
+            j += 1
+    return out
+
+
 def _overlaps_any(
     start_tick: int,
     end_tick: int,
@@ -276,6 +318,7 @@ def inject_beat_markers(
     aligned_path: str | Path | None = None,
     note_window_margin: float = 0.25,
     note_tail_allowance: float = 1.0,
+    rms_segments_path: str | Path | None = None,
 ) -> int:
     """Inject ``marker`` meta-events at fixed quarter-note intervals.
 
@@ -308,6 +351,8 @@ def inject_beat_markers(
             aligned_path, margin=note_window_margin,
             tail_allowance=note_tail_allowance,
         )
+        if rms_segments_path is not None:
+            windows = _intersect_windows(windows, _voiced_windows(rms_segments_path))
         filter_notes_to_windows(mid, windows, tempo_us=tempo_us)
 
     has_ts = any(
@@ -364,6 +409,7 @@ def inject_pack_markers(
     aligned_path: str | Path | None = None,
     note_window_margin: float = 0.25,
     note_tail_allowance: float = 1.0,
+    rms_segments_path: str | Path | None = None,
 ) -> int:
     """Content-aligned pages at a (near-)fixed visual scale.
 
@@ -395,6 +441,8 @@ def inject_pack_markers(
             aligned_path, margin=note_window_margin,
             tail_allowance=note_tail_allowance,
         )
+        if rms_segments_path is not None:
+            windows = _intersect_windows(windows, _voiced_windows(rms_segments_path))
         filter_notes_to_windows(mid, windows, tempo_us=tempo_us)
 
     notes: list[tuple[float, float]] = []

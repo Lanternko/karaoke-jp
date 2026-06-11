@@ -11,23 +11,42 @@ from pathlib import Path
 import click
 
 
-def is_hallucinated_segment(text: str) -> bool:
-    """Return True if ``text`` looks like a Whisper repetition hallucination.
+_STOCK_HALLUCINATIONS = (
+    # Whisper-ja stock phrases learned from YouTube-caption training data.
+    # They show up verbatim on breath/ad-lib/non-speech segments regardless
+    # of the song, so a substring blacklist is a model property, not a
+    # per-song hack. Keep entries high-precision: each must be implausible
+    # as an actual lyric line.
+    "ご視聴ありがとう",
+    "チャンネル登録",
+    "高評価",
+    "コメント欄",
+    "次の動画で",
+)
 
-    Two independent signals — either one fires:
+
+def is_hallucinated_segment(text: str) -> bool:
+    """Return True if ``text`` looks like a Whisper hallucination.
+
+    Three independent signals — any one fires:
 
     1. **Char-entropy collapse**: long text with a tiny set of unique chars
        (e.g. "ねえねえねえ..." has 2 unique / 280 = 0.007).
     2. **N-gram run**: any 2- or 3-char substring repeats consecutively ≥ 10
        times (catches "ラララララ..." even when 1-gram entropy is low but
        above the char-entropy threshold once stripped of spaces).
+    3. **Stock phrases**: YouTube-caption boilerplate ("ご視聴ありがとう…")
+       emitted on breath/ad-lib segments. The repetition signals can't catch
+       these (short text, normal entropy).
 
-    Both thresholds are slack enough to spare normal lyrics: Japanese verse
-    lines are <30 chars so the entropy check is gated on length, and chorus
-    repeats like "きらりきらり" or "ずっと ずっと" cap at 2 consecutive
-    runs (well under 10).
+    The repetition thresholds are slack enough to spare normal lyrics:
+    Japanese verse lines are <30 chars so the entropy check is gated on
+    length, and chorus repeats like "きらりきらり" or "ずっと ずっと" cap
+    at 2 consecutive runs (well under 10).
     """
     stripped = "".join(text.split())  # drop spaces / newlines / 全角空白
+    if any(phrase in stripped for phrase in _STOCK_HALLUCINATIONS):
+        return True
     if len(stripped) >= 30:
         unique_ratio = len(set(stripped)) / len(stripped)
         if unique_ratio < 0.15:

@@ -40,6 +40,11 @@ from karaoke_jp.midi_markers import inject_beat_markers, inject_line_markers, in
 @click.option("--page-seconds", default=9.0, type=float, show_default=True,
               help="(--mode pack) fixed page span = constant visual scale; phrases "
               "that cannot finish inside a page move whole to the next page.")
+@click.option("--rms-segments", "rms_segments_path", type=click.Path(exists=True, dir_okay=False),
+              default=None, help="(--mode beat/pack with --aligned) rms_segments.json; note "
+              "windows are additionally intersected with RMS voiced segments so separation-"
+              "bleed notes inside instrumental breaks never render, even when a misaligned "
+              "lyric window spans the break.")
 def main(
     midi_path: str,
     aligned_path: str | None,
@@ -52,6 +57,7 @@ def main(
     note_window_margin: float,
     note_tail_allowance: float,
     page_seconds: float,
+    rms_segments_path: str | None,
 ) -> None:
     if mode == "line":
         if aligned_path is None:
@@ -65,6 +71,7 @@ def main(
             aligned_path=aligned_path,
             note_window_margin=note_window_margin,
             note_tail_allowance=note_tail_allowance,
+            rms_segments_path=rms_segments_path,
         )
     else:  # beat
         if bpm is None and bpm_file is None:
@@ -79,6 +86,7 @@ def main(
             note_tail_allowance=note_tail_allowance,
             aligned_path=aligned_path,
             note_window_margin=note_window_margin,
+            rms_segments_path=rms_segments_path,
         )
     print(f"injected {n} page markers ({mode}) -> {out_path}")
 

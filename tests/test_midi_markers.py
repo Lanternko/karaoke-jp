@@ -122,3 +122,68 @@ def test_inject_beat_markers_can_filter_notes_to_lyric_windows(tmp_path: Path) -
     # Page markers still span the original MIDI duration, not just the filtered
     # note duration. Otherwise the bar view would stop advancing in later pages.
     assert markers[1] == ("P02", pytest.approx(4.0))
+
+
+def test_voiced_windows_reads_rms_segments(tmp_path: Path) -> None:
+    from karaoke_jp.midi_markers import _voiced_windows
+
+    seg_path = tmp_path / "rms_segments.json"
+    seg_path.write_text(json.dumps({
+        "segments": [
+            {"start": 1.0, "end": 2.0},
+            {"start": 2.4, "end": 3.0},
+            {"start": 10.0, "end": 12.0},
+        ],
+    }), encoding="utf-8")
+    windows = _voiced_windows(seg_path, pad=0.3)
+    assert windows == [(0.7, 3.3), (9.7, 12.3)]
+
+
+def test_intersect_windows_clips_lyric_window_to_voiced() -> None:
+    from karaoke_jp.midi_markers import _intersect_windows
+
+    lyric = [(90.0, 106.0)]
+    voiced = [(87.0, 92.0), (95.2, 97.0), (106.2, 116.0)]
+    assert _intersect_windows(lyric, voiced) == [(90.0, 92.0), (95.2, 97.0)]
+    assert _intersect_windows([], voiced) == []
+    assert _intersect_windows(lyric, []) == []
+
+
+def test_beat_markers_rms_gate_drops_interlude_notes(tmp_path: Path) -> None:
+    mid = mido.MidiFile()
+    track = mido.MidiTrack()
+    mid.tracks.append(track)
+    tempo = 500_000
+    track.append(mido.MetaMessage("set_tempo", tempo=tempo, time=0))
+    tpb = mid.ticks_per_beat
+
+    def sec(s: float) -> int:
+        return int(mido.second2tick(s, tpb, tempo))
+
+    track.append(mido.Message("note_on", note=60, velocity=90, time=sec(1.0)))
+    track.append(mido.Message("note_off", note=60, velocity=0, time=sec(0.5)))
+    track.append(mido.Message("note_on", note=62, velocity=90, time=sec(3.5)))
+    track.append(mido.Message("note_off", note=62, velocity=0, time=sec(0.5)))
+    midi_path = tmp_path / "in.mid"
+    mid.save(midi_path)
+
+    aligned = [{"text": "あ", "start": 0.8, "end": 6.0,
+                "tokens": [{"surface": "あ", "chars": [{"char": "あ", "start": 0.8, "end": 6.0}]}]}]
+    aligned_path = tmp_path / "aligned.json"
+    aligned_path.write_text(json.dumps(aligned), encoding="utf-8")
+
+    seg_path = tmp_path / "rms_segments.json"
+    seg_path.write_text(json.dumps({"segments": [{"start": 0.8, "end": 2.0}]}), encoding="utf-8")
+
+    out_gated = tmp_path / "gated.mid"
+    inject_beat_markers(midi_path, out_gated, bpm=120.0, aligned_path=aligned_path,
+                        rms_segments_path=seg_path)
+    notes = [msg.note for tr in mido.MidiFile(out_gated).tracks for msg in tr
+             if msg.type == "note_on" and msg.velocity > 0]
+    assert notes == [60]
+
+    out_ungated = tmp_path / "ungated.mid"
+    inject_beat_markers(midi_path, out_ungated, bpm=120.0, aligned_path=aligned_path)
+    notes = [msg.note for tr in mido.MidiFile(out_ungated).tracks for msg in tr
+             if msg.type == "note_on" and msg.velocity > 0]
+    assert notes == [60, 62]
