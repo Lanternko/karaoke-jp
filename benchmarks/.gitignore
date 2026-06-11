@@ -1,0 +1,13 @@
+# third-party clone (re-clone per RESULTS.md, not vendored)
+singing_transcription_ICASSP1021/
+singing_transcription_ICASSP2021/
+# audio + derived heavyweight artifacts (copyright / re-derivable)
+mir-st500/audio/
+mir-st500/sep/
+mir-st500/vocals_all/
+mir-st500/f0/
+mir-st500/ext_mid/
+kiritan/vocals/
+kiritan/f0/
+kiritan/wav_all/
+*.wav
