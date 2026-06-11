@@ -99,6 +99,43 @@ def test_layout_keeps_fixed_gaps_and_no_overlap() -> None:
         assert b[0] - a[1] == pytest.approx(GAP)
 
 
+def test_layout_slots_are_quantized_durations() -> None:
+    # v11 constant-speed slots: slot spacing == quantized duration exactly
+    # (the mora gap lives inside the slot), so on-grid widths stay 1:2:1
+    notes = [(10.0, 10.5, 60), (10.5, 11.5, 62), (11.5, 12.0, 64)]
+    qnotes = mdg.quantize(notes, quarter=QUARTER)  # 1q, 2q, 1q
+    disp, _r, _d = _layout_simple(notes, qnotes, [[[0, 1, 2]]])
+    qd = [q[1] - q[0] for q in qnotes]
+    assert disp[1][0] - disp[0][0] == pytest.approx(qd[0])
+    assert disp[2][0] - disp[1][0] == pytest.approx(qd[1])
+    for d, q in zip(disp, qd):
+        assert d[1] - d[0] == pytest.approx(q - GAP)  # bar = slot - gap
+
+
+def test_layout_breath_inserts_wider_space() -> None:
+    # 0.4s real silence > 0.25 threshold -> one breath tier between slots
+    notes = [(10.0, 10.4, 60), (10.8, 11.2, 62)]
+    qnotes = mdg.quantize(notes, quarter=QUARTER)
+    breath = 0.5 * QUARTER
+    disp, _r, _d = _layout_simple(notes, qnotes, [[[0, 1]]],
+                                  breath_space=breath, breath_gap=0.25)
+    qd0 = qnotes[0][1] - qnotes[0][0]
+    assert disp[1][0] - disp[0][0] == pytest.approx(qd0 + breath)
+
+
+def test_phrase_width_mirrors_layout_cursor() -> None:
+    notes = [(10.0, 10.4, 60), (10.8, 11.2, 62), (11.25, 11.7, 64)]
+    qnotes = mdg.quantize(notes, quarter=QUARTER)
+    breath = 0.5 * QUARTER
+    ph = [0, 1, 2]
+    disp, _r, _d = _layout_simple(notes, qnotes, [[ph]],
+                                  breath_space=breath, breath_gap=0.25)
+    w = mdg.phrase_width(ph, notes, qnotes, breath_space=breath, breath_gap=0.25)
+    # layout extent from first slot start to last slot end == packing width
+    last_slot_end = disp[-1][1] + GAP
+    assert last_slot_end - disp[0][0] == pytest.approx(w)
+
+
 def test_layout_warp_strictly_monotonic() -> None:
     notes = [(20.0, 20.4, 60), (20.5, 21.0, 62), (40.0, 41.0, 64)]
     qnotes = mdg.quantize(notes, quarter=QUARTER)

@@ -3,7 +3,13 @@
 
 Fixed visual vocabulary:
   * a quarter note has a FIXED width; durations snap to 2^-2..2^2 quarters
-  * the gap between morae is FIXED (even when sung legato)
+  * a note's SLOT is exactly its quantized duration; the bar is drawn
+    slot - gap, so the inter-mora gap lives inside the note's own beat
+    (like engraved sheet music) and on-grid singing gives a CONSTANT
+    cursor speed across note values (Kojek v11: 4th+gap vs 2nd+gap were
+    not 2:1, so the cursor wobbled even on tempo)
+  * a real inter-note silence above the breath threshold inserts a wider
+    EXTRA space: the reader must see where the singer breathes
   * the gap between phrases is FIXED and larger
   * every page spans exactly the same display width (1-3 phrases, usually 2)
 
@@ -38,7 +44,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import mido  # noqa: E402
 
-from karaoke_jp.midi_markers import _lyric_windows  # noqa: E402
+from karaoke_jp.midi_markers import (  # noqa: E402
+    _intersect_windows,
+    _lyric_windows,
+    _voiced_windows,
+)
 from karaoke_jp.score_melody import read_first_tempo_bpm, read_midi_notes  # noqa: E402
 
 Note = tuple[float, float, int]
@@ -162,6 +172,26 @@ def split_oversized(
             + split_oversized(ph[cut + 1:], notes, width, budget, line_of))
 
 
+def phrase_width(
+    ph: list[int],
+    notes: list[Note],
+    qnotes: list[Note],
+    *,
+    breath_space: float,
+    breath_gap: float,
+) -> float:
+    """Display width of a phrase: the sum of its note slots (slot = quantized
+    duration; the mora gap lives INSIDE the slot) plus one extra breath space
+    after every note whose real silence to the next note exceeds breath_gap.
+
+    Must mirror layout_pages' cursor arithmetic exactly or packing overflows.
+    """
+    w = sum(qnotes[i][1] - qnotes[i][0] for i in ph)
+    w += breath_space * sum(
+        1 for a, b in zip(ph, ph[1:]) if notes[b][0] - notes[a][1] > breath_gap)
+    return w
+
+
 def pack_pages(
     phrases: list[list[int]],
     width,
@@ -199,8 +229,16 @@ def layout_pages(
     quarter: float,
     count_in_quarters: float = 4.0,
     flip_delay: float = 0.5,
+    breath_space: float = 0.0,
+    breath_gap: float = 0.25,
 ) -> tuple[list[Note], list[float], list[float]]:
     """Place notes on the display timeline and build the real<->display warp.
+
+    Slot semantics (v11): each note occupies exactly its quantized duration;
+    the bar is drawn slot - gap so widths stay perfectly proportional and the
+    on-grid cursor speed is constant. A real silence > breath_gap inserts an
+    extra breath_space between slots (visible breath marker; the cursor
+    sweeps it during the actual breath).
 
     Long rests before a page get the TV treatment: an early page-flip anchor
     (flip_delay after the previous note ends), a park anchor (cursor waits at
@@ -241,14 +279,16 @@ def layout_pages(
             if k:
                 cursor += pgap
             for j, i in enumerate(ph):
-                if j:
-                    cursor += gap
                 qdur = qnotes[i][1] - qnotes[i][0]
                 rs, re, pitch = notes[i]
-                disp_notes.append((cursor, cursor + qdur, pitch))
+                bar_end = cursor + qdur - gap
+                disp_notes.append((cursor, bar_end, pitch))
                 add_anchor(rs, cursor)
-                add_anchor(re, cursor + qdur)
+                add_anchor(re, bar_end)
                 cursor += qdur
+                if (j < len(ph) - 1
+                        and notes[ph[j + 1]][0] - re > breath_gap):
+                    cursor += breath_space
 
     # closing anchor so the warp stays defined to the end of the song
     add_anchor(real_anchors[-1] + 30.0, disp_anchors[-1] + 30.0)
@@ -288,10 +328,22 @@ def layout_pages(
               type=click.Path(exists=True, dir_okay=False), default=None,
               help="JSON list of ear-verified pitch fixes, display layer only "
               "(never touches eval candidates). See apply_pitch_patch().")
+@click.option("--breath-gap", type=float, default=0.25, show_default=True,
+              help="REAL inter-note silence above this marks a breath.")
+@click.option("--breath-units", type=float, default=0.5, show_default=True,
+              help="Extra display space inserted at a breath, in quarters "
+              "(visibly wider than the in-slot mora gap).")
+@click.option("--rms-segments", "rms_segments_path",
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help="rms_segments.json; lyric note windows are additionally "
+              "intersected with RMS voiced segments so separation-bleed notes "
+              "inside instrumental breaks never render, even when a misaligned "
+              "lyric window (e.g. a no-kana ad-lib line) spans the break.")
 def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
          gap_units, phrase_gap_units, lead_units, phrase_split_gap, min_note,
          aligned_path, note_window_margin, note_tail_allowance,
-         count_in_quarters, flip_delay, pitch_patch_path):
+         count_in_quarters, flip_delay, pitch_patch_path,
+         breath_gap, breath_units, rms_segments_path):
     # MID2BAR's mid2csv converts the tempo meta back to BPM with round(_, 2)
     # before deriving tick->seconds. Round HERE too, or the warp's display
     # seconds drift ~3e-5 relative vs the renderer's — ~5ms by song middle,
@@ -305,6 +357,8 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
     if aligned_path:
         windows = _lyric_windows(aligned_path, margin=note_window_margin,
                                  tail_allowance=note_tail_allowance)
+        if rms_segments_path:
+            windows = _intersect_windows(windows, _voiced_windows(rms_segments_path))
         notes = [n for n in notes
                  if any(ws <= n[0] < we for ws, we in windows)
                  or any(n[0] < we and n[1] > ws for ws, we in windows)]
@@ -331,14 +385,17 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
         else:
             phrases[-1].append(i)
 
-    # phrase display width = sum of quantized durations + fixed mora gaps
+    # phrase display width = sum of note slots (+ breath spaces); the mora
+    # gap lives inside each slot, so it does not appear here
     gap = gap_units * quarter
     pgap = phrase_gap_units * quarter
     lead = lead_units * quarter
     span = quarters_per_page * quarter
+    breath_space = breath_units * quarter
 
     def width(ph: list[int]) -> float:
-        return sum(qnotes[i][1] - qnotes[i][0] for i in ph) + gap * (len(ph) - 1)
+        return phrase_width(ph, notes, qnotes,
+                            breath_space=breath_space, breath_gap=breath_gap)
 
     # chorus sections flow with sub-split gaps and become one huge cluster;
     # split oversized phrases (preferring lyric-line boundaries) until each
@@ -353,7 +410,8 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
     disp_notes, real_anchors, disp_anchors = layout_pages(
         pages, notes, qnotes, span=span, lead=lead, gap=gap, pgap=pgap,
         quarter=quarter, count_in_quarters=count_in_quarters,
-        flip_delay=flip_delay)
+        flip_delay=flip_delay, breath_space=breath_space,
+        breath_gap=breath_gap)
 
     # write display MIDI: notes + tempo + page markers every `span`
     bpm = 60.0 / quarter

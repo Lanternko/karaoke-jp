@@ -11,14 +11,16 @@
 |---|---|---|
 | 四分音符寬度 | 恆定（頁寬 1760px ÷ 16 拍 = 110px/拍） | `--quarters-per-page 16` |
 | 音符時值 | snap 至 2^-2 ~ 2^2 四分音符（log 距離最近） | `quantize()` |
-| mora 間隙 | 恆 0.125 拍（~14px）— 「看得到就好」（v10 自 0.25 降，Kojek 嫌太疏） | `--gap-units 0.125` |
+| 音符 slot（v11） | **slot = 量化時值本身**，bar 畫 slot − gap — mora 縫住在音符自己的拍內（同樂譜排版），on-grid 演唱游標**恆速** | `layout_pages` |
+| mora 間隙 | 恆 0.0625 拍（~7px）—「看得到就好」（0.25→0.125→0.0625 兩輪調降） | `--gap-units 0.0625` |
+| 換氣間隙（v11） | 真實靜默 >0.25s → slot 間再插 0.5 拍 — **讀者看得出換氣點**，游標在真實換氣時掃過它 | `--breath-gap 0.25` / `--breath-units 0.5` |
 | 換句間隙 | 恆 1.25 拍 | `--phrase-gap-units 1.25` |
 | 每頁 | 固定 16 拍跨度，1–3 句（通常 2），塞不下整句下頁 | packing |
 | 超大樂句切分 | **歌詞行邊界絕對優先**（aligned JSON），單行超頁才退回最大聲學空隙 | `split_oversized` |
 | 長休息 | 上句結束 +0.5s 翻頁 → 游標 park 在左緣 → 首音前 4 拍開始掃（倒數） | `--count-in-quarters 4` / `--flip-delay 0.5` |
 | 短句間翻頁 | 前句唱完即快翻（gap 的 25% 處），新頁音高可讀時間 ≈ gap 的 75% | quick-flip anchor |
 | 人耳音高修正 | per-song sidecar，**只動顯示層**，eval 候選永不碰 | `--pitch-patch overrides/<song>_pitch_patch.json` |
-| 變動項 | **游標速度**（Kojek 明示授權）；寬度零彈性 | warp |
+| 變動項 | 游標速度只在**搶/拖拍與換氣**時變（on-grid 恆速 — 變速本身成了演唱偏差訊號） | warp |
 
 ## 資料流
 
@@ -89,9 +91,12 @@ v1 固定拍頁(每句重頭) → pack 變長頁(縮放跳動 5.4×) → v6 固�
 → v9（Kojek 驗收回饋輪）：sprite PADDING 契約修正（間隙真正可見）、
 行邊界優先切分（1:13「酔った振り」/1:52「吹く青風」不再被腰斬）、
 長休息 flip/park/count-in、mid2csv BPM 2dp 對齊
-→ **v10（第二輪驗收回饋）**：mora 間隙 0.25→0.125 拍、短句間 quick-flip
+→ v10（第二輪驗收回饋）：mora 間隙 0.25→0.125 拍、短句間 quick-flip
 （前句唱完即翻頁，預覽時間 ≈ 75% gap）、--pitch-patch 人耳修正 sidecar
-（chidori 52.4s た Eb4→Eb3，鏡像句 140.3s union 本來就對是證據）。
+（chidori 52.4s た Eb4→Eb3，鏡像句 140.3s union 本來就對是證據）
+→ **v11（第三輪，Kojek 兩項設計）**：恆速 slot（gap 從「附加」改「內含」—
+四分+gap vs 二分+gap 不是 2:1 的游標抖動根除）＋換氣間隙視覺分級
+（>0.25s 真實靜默插 0.5 拍寬縫）；間隙 0.125→0.0625 拍。
 中途實測否決：sprite 端內縮做間隙（縮放後剩 2px）、量化後直接渲染（吞音重疊）。
 
 ## 坑（修 bug 前先讀）
