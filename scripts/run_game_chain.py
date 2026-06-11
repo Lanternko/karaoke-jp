@@ -31,7 +31,7 @@ GAME_DIR = ROOT / "third_party" / "GAME"
 GAME_PY = Path.home() / "venvs" / "karaoke-jp-game" / "bin" / "python"
 GAME_MODEL = GAME_DIR / "pretrained" / "GAME-1.0-large" / "model.pt"
 
-POSTFIX_FLAGS = ["--extend-sustains"]
+POSTFIX_FLAGS = ["--extend-sustains", "--keep-repeats"]
 
 
 def _run(args: list[str], cwd: Path | None = None) -> None:
@@ -69,12 +69,15 @@ def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
         _run([sys.executable, str(SCRIPTS / "melody_union.py"),
               "--primary", str(pf_mid), "--fallback", fallback_midi,
               "--out", str(union_mid)])
-        _run([sys.executable, str(SCRIPTS / "add_midi_markers.py"),
-              "--midi", str(union_mid), "--out", out_path,
-              "--mode", "beat", "--bpm-file", bpm_file,
-              "--quarters-per-page", str(quarters_per_page),
-              "--aligned", aligned_path])
-    click.echo(f"[game-chain] wrote {out_path}")
+        # standardized display grid (Kojek spec): fixed quarter width, fixed
+        # mora/phrase gaps, fixed page span; sync via the warp sidecar that
+        # render_mp4 --time-warp consumes
+        warp_path = str(Path(out_path).with_suffix(".warp.json"))
+        _run([sys.executable, str(SCRIPTS / "make_display_grid.py"),
+              "--midi", str(union_mid), "--bpm-file", bpm_file,
+              "--aligned", aligned_path,
+              "--out-midi", out_path, "--out-warp", warp_path])
+    click.echo(f"[game-chain] wrote {out_path} (+ {warp_path}; render with --time-warp)")
 
 
 if __name__ == "__main__":

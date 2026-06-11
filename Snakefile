@@ -159,14 +159,20 @@ rule quantize_melody:
         f"--out {{output.midi:q}}"
 
 
+def _override_flag(song):
+    p = Path("overrides") / f"{song}.json"
+    return f"--override {p}" if p.exists() else ""
+
 rule tokenize:
     """M3a: lyrics.txt -> tokens.json (fugashi + UniDic readings)."""
     input:
         lyrics=str(SONGS_DIR / "{song}" / "lyrics.txt"),
     output:
         tokens=str(OUT_DIR / "{song}" / "tokens.json"),
+    params:
+        override=lambda wc: _override_flag(wc.song),
     shell:
-        f"{LYRICS_PY} scripts/tokenize_lyrics.py {{input.lyrics:q}} -o {{output.tokens:q}}"
+        f"{LYRICS_PY} scripts/tokenize_lyrics.py {{input.lyrics:q}} -o {{output.tokens:q}} {{params.override}}"
 
 
 rule asr:

@@ -33,6 +33,10 @@ def _seconds_to_ticks(seconds: float, ticks_per_beat: int, tempo_us: int) -> int
     return int(round(beats * ticks_per_beat))
 
 
+def _ticks_to_seconds(ticks: int, ticks_per_beat: int, tempo_us: int) -> float:
+    return ticks * tempo_us / (ticks_per_beat * 1_000_000)
+
+
 def _midi_duration_seconds(mid: mido.MidiFile, tempo_us: int) -> float:
     """Return the wall-clock end time of the last note in *mid* (seconds)."""
     last = 0.0
@@ -65,9 +69,10 @@ def _lyric_windows(
     aligned_path: str | Path,
     *,
     margin: float,
+    tail_allowance: float = 0.0,
 ) -> list[tuple[float, float]]:
     aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
-    windows: list[tuple[float, float]] = []
+    raw: list[tuple[float, float]] = []
     for line in aligned:
         if not line.get("tokens"):
             continue
@@ -75,6 +80,16 @@ def _lyric_windows(
         end = float(line.get("end", start))
         if end <= start:
             continue
+        raw.append((start, end))
+    raw.sort()
+    windows: list[tuple[float, float]] = []
+    for i, (start, end) in enumerate(raw):
+        if tail_allowance > 0.0:
+            # phrase-tail sustains/falls legitimately start right after the
+            # aligned lyric ends; extend toward (not into) the next line so
+            # they survive the gate that kills instrumental-gap detections
+            limit = raw[i + 1][0] - 0.05 if i + 1 < len(raw) else end + tail_allowance
+            end = max(end, min(end + tail_allowance, limit))
         windows.append((max(0.0, start - margin), end + margin))
     return _merge_windows(windows)
 
@@ -260,6 +275,7 @@ def inject_beat_markers(
     quarters_per_page: int = 10,
     aligned_path: str | Path | None = None,
     note_window_margin: float = 0.25,
+    note_tail_allowance: float = 1.0,
 ) -> int:
     """Inject ``marker`` meta-events at fixed quarter-note intervals.
 
@@ -288,7 +304,10 @@ def inject_beat_markers(
     original_song_end_s = _midi_duration_seconds(mid, tempo_us)
 
     if aligned_path is not None:
-        windows = _lyric_windows(aligned_path, margin=note_window_margin)
+        windows = _lyric_windows(
+            aligned_path, margin=note_window_margin,
+            tail_allowance=note_tail_allowance,
+        )
         filter_notes_to_windows(mid, windows, tempo_us=tempo_us)
 
     has_ts = any(
@@ -318,6 +337,154 @@ def inject_beat_markers(
         page_starts.append((i * seconds_per_page, f"P{i + 1:02d}"))
     # Synthetic END marker so MID2BAR's last-page logic has somewhere to land.
     page_starts.append((song_end_s + 1.0, "END"))
+
+    marker_track = mido.MidiTrack()
+    prev_tick = 0
+    for t_s, label in page_starts:
+        abs_tick = _seconds_to_ticks(t_s, mid.ticks_per_beat, tempo_us)
+        delta = max(abs_tick - prev_tick, 0)
+        marker_track.append(mido.MetaMessage("marker", text=label, time=delta))
+        prev_tick = abs_tick
+    marker_track.append(mido.MetaMessage("end_of_track", time=0))
+
+    mid.tracks.append(marker_track)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    mid.save(out_path)
+    return len(page_starts) - 1
+
+
+def inject_pack_markers(
+    midi_path: str | Path,
+    out_path: str | Path,
+    *,
+    page_seconds: float = 9.0,
+    phrase_gap: float = 0.8,
+    lead: float = 0.30,
+    trail: float = 0.20,
+    aligned_path: str | Path | None = None,
+    note_window_margin: float = 0.25,
+    note_tail_allowance: float = 1.0,
+) -> int:
+    """Content-aligned pages at a (near-)fixed visual scale.
+
+    Every content page targets exactly ``page_seconds`` of span, so bar
+    width per second stays constant across pages — no fat bars on short
+    pages or sliver bars on long ones. Phrases (note clusters split at gaps
+    > ``phrase_gap``; oversized chorus runs split at their largest internal
+    gap) pack greedily: a phrase that cannot finish inside the page moves
+    WHOLE to the next page (truncate-to-next-line). Unused right side stays
+    blank, like the TV reference. Long gaps become their own empty filler
+    page (scale is invisible without bars). A page only shrinks below
+    ``page_seconds`` when the next phrase starts before the page budget
+    ends — the bounded price of never splitting a phrase across pages.
+    """
+    midi_path = Path(midi_path)
+    out_path = Path(out_path)
+
+    mid = mido.MidiFile(midi_path)
+    tempo_us = 500_000
+    for msg in mid.tracks[0]:
+        if msg.type == "set_tempo":
+            tempo_us = msg.tempo
+            break
+
+    song_end_s = _midi_duration_seconds(mid, tempo_us)
+
+    if aligned_path is not None:
+        windows = _lyric_windows(
+            aligned_path, margin=note_window_margin,
+            tail_allowance=note_tail_allowance,
+        )
+        filter_notes_to_windows(mid, windows, tempo_us=tempo_us)
+
+    notes: list[tuple[float, float]] = []
+    for track in mid.tracks:
+        abs_tick = 0
+        active: dict[int, int] = {}
+        for msg in track:
+            abs_tick += msg.time
+            if _is_note_on(msg):
+                active[msg.note] = abs_tick
+            elif _is_note_off(msg) and msg.note in active:
+                start_tick = active.pop(msg.note)
+                notes.append((
+                    _ticks_to_seconds(start_tick, mid.ticks_per_beat, tempo_us),
+                    _ticks_to_seconds(abs_tick, mid.ticks_per_beat, tempo_us),
+                ))
+    notes.sort()
+    if not notes:
+        raise ValueError(f"No notes to paginate in {midi_path}")
+
+    clusters: list[list[tuple[float, float]]] = [[notes[0]]]
+    for n in notes[1:]:
+        if n[0] - clusters[-1][-1][1] > phrase_gap:
+            clusters.append([n])
+        else:
+            clusters[-1].append(n)
+
+    def split_oversized(cluster: list[tuple[float, float]]) -> list[list[tuple[float, float]]]:
+        budget = page_seconds - lead - trail
+        if cluster[-1][1] - cluster[0][0] <= budget or len(cluster) < 2:
+            return [cluster]
+        gaps = [(cluster[i + 1][0] - cluster[i][1], i) for i in range(len(cluster) - 1)]
+        mid_idx = (len(cluster) - 1) / 2
+        _gap, cut = max(gaps, key=lambda g: (round(g[0], 3), -abs(g[1] - mid_idx)))
+        return split_oversized(cluster[: cut + 1]) + split_oversized(cluster[cut + 1:])
+
+    phrases: list[tuple[float, float]] = []
+    for cluster in clusters:
+        for part in split_oversized(cluster):
+            phrases.append((part[0][0], part[-1][1]))
+
+    budget = page_seconds - lead - trail
+
+    # plan pages as phrase-index groups (greedy fill)
+    pages: list[list[int]] = [[0]]
+    for i in range(1, len(phrases)):
+        first = phrases[pages[-1][0]][0]
+        if phrases[i][1] - first <= budget:
+            pages[-1].append(i)
+        else:
+            pages.append([i])
+
+    # balance pass: a page left with a single short phrase (because its
+    # neighbour could not fit) borrows trailing phrases from the previous
+    # page so adjacent scales stay even instead of one page rendering fat
+    def span(page: list[int]) -> float:
+        return phrases[page[-1]][1] - phrases[page[0]][0]
+
+    for _ in range(2):
+        for i in range(len(pages) - 1, 0, -1):
+            prev, cur = pages[i - 1], pages[i]
+            while len(prev) >= 2 and span(cur) < 0.65 * budget:
+                cand = prev[-1]
+                if phrases[cur[-1]][1] - phrases[cand][0] > budget:
+                    break
+                cur.insert(0, prev.pop())
+
+    boundaries: list[float] = []
+    for i in range(len(pages) - 1):
+        P = phrases[pages[i][0]][0] - lead
+        content_end = phrases[pages[i][-1]][1]
+        next_start = phrases[pages[i + 1][0]][0]
+        cut = min(P + page_seconds, next_start - lead)
+        cut = max(cut, content_end + 0.05)
+        cut = min(cut, next_start - 0.05)
+        boundaries.append(cut)
+        if next_start - lead - cut > 0.5:
+            boundaries.append(next_start - lead)  # empty filler page
+    content_end = phrases[pages[-1][-1]][1]
+
+    page_starts: list[tuple[float, str]] = [(max(0.0, phrases[0][0] - lead), "P01")]
+    page_starts += [(t, f"P{i + 2:02d}") for i, t in enumerate(sorted(set(boundaries)))]
+    page_starts.append((max(song_end_s, content_end or 0.0) + 1.0, "END"))
+
+    has_ts = any(msg.type == "time_signature" for tr in mid.tracks for msg in tr)
+    if not has_ts:
+        mid.tracks[0].insert(0, mido.MetaMessage(
+            "time_signature", numerator=4, denominator=4,
+            clocks_per_click=24, notated_32nd_notes_per_beat=8, time=0,
+        ))
 
     marker_track = mido.MidiTrack()
     prev_tick = 0

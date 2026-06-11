@@ -330,6 +330,9 @@ def merge_same_pitch(notes: list[Note], max_gap: float = 0.025) -> list[Note]:
 @click.option("--chroma-prior/--no-chroma-prior", default=False)
 @click.option("--extend-sustains/--no-extend-sustains", "do_extend", default=False)
 @click.option("--capture-tail-falls/--no-capture-tail-falls", "do_tail_falls", default=False)
+@click.option("--keep-repeats", is_flag=True, default=False,
+              help="Skip the final same-pitch merge so per-mora repeated notes "
+              "(GAME emits them separately) stay separate bars on the display.")
 def main(
     midi_path: str,
     f0_path: str,
@@ -342,6 +345,7 @@ def main(
     chroma_prior: bool,
     do_extend: bool,
     do_tail_falls: bool,
+    keep_repeats: bool,
 ) -> None:
     track = F0Track.from_npz(f0_path)
     if aligned_path:
@@ -383,7 +387,8 @@ def main(
     if do_extend:
         notes, stats["sustains_extended"] = extend_sustains(notes, track)
 
-    notes = merge_same_pitch(notes)
+    if not keep_repeats:
+        notes = merge_same_pitch(notes)
     tempo = read_first_tempo_bpm(Path(midi_path))
     _write_midi(notes, Path(out_path), tempo=tempo)
     print(f"[score-note-postfix] wrote {out_path} notes={len(notes)} {stats}")

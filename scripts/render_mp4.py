@@ -112,6 +112,44 @@ def _zero_lag_time(app) -> None:
     object.__setattr__(app.s, "LAG_TIME", 0.0)
 
 
+def _apply_time_warp(app, warp_path: str) -> None:
+    """Bar-area-only time warp (display-grid mode).
+
+    The display MIDI's notes/markers live on a standardized display timeline
+    (fixed quarter width, fixed gaps). Wrap the bar-area draw methods so they
+    see display time = interp(real time): the wipe still flips exactly when
+    the singer flips; only the cursor speed varies (Kojek-approved). Lyrics,
+    audio and the seekbar keep real time.
+    """
+    import json as _json
+
+    import numpy as _np
+
+    data = _json.loads(Path(warp_path).read_text())
+    real = _np.asarray(data["real"], dtype=float)
+    disp = _np.asarray(data["display"], dtype=float)
+
+    def _wrap(name: str) -> None:
+        orig = getattr(app, name)
+
+        def wrapped(*args, **kwargs):
+            if getattr(app, "_warp_active", False):
+                return orig(*args, **kwargs)
+            real_t = app.current_time
+            app._warp_active = True
+            app.current_time = float(_np.interp(real_t, real, disp))
+            try:
+                return orig(*args, **kwargs)
+            finally:
+                app.current_time = real_t
+                app._warp_active = False
+
+        setattr(app, name, wrapped)
+
+    for name in ("draw_notes", "draw_now_bar"):
+        _wrap(name)
+
+
 def _disable_particles(app) -> None:
     """Suppress MID2BAR's sparkle/glitter particles.
 
@@ -266,6 +304,12 @@ def _hide_notes_without_visible_lyrics(app) -> None:
               default=None, help="path to app_settings/settings.json (default: bundled).")
 @click.option("--assets", "assets_json_path", type=click.Path(exists=True, dir_okay=False),
               default=None, help="path to app_settings/assets.json (default: bundled).")
+@click.option("--time-warp", "time_warp_path", type=click.Path(exists=True, dir_okay=False),
+              default=None,
+              help="JSON {real:[..], display:[..]} from make_display_grid.py. The "
+              "bar MIDI then lives on a display timeline; the bar area (notes, "
+              "wipe, cursor) sees piecewise-linearly warped time while audio, "
+              "lyrics and seekbar stay on real time.")
 def main(
     audio_path: str,
     midi_path: str,
@@ -275,11 +319,14 @@ def main(
     lrc_settings_path: str | None,
     app_settings_path: str | None,
     assets_json_path: str | None,
+    time_warp_path: str | None,
 ) -> None:
     # Defaults inside the bundled MID2BAR-Player tree. Resolve to absolute
     # paths BEFORE the os.chdir below — otherwise relative override paths
     # (e.g. `--app-settings my_settings.json` from the user's CWD) would
     # silently re-anchor to MID2BAR_DIR after the chdir and stop resolving.
+    if time_warp_path is not None:
+        time_warp_path = str(Path(time_warp_path).resolve())
     lrc_settings_path = str(Path(
         lrc_settings_path or (MID2BAR_DIR / "lyrics_settings" / "settings_default.json")
     ).resolve())
@@ -413,7 +460,12 @@ def main(
 
     _disable_particles(app)
     _hide_minmax_columns(app)
-    _hide_notes_without_visible_lyrics(app)
+    if time_warp_path is None:
+        _hide_notes_without_visible_lyrics(app)
+    else:
+        # display-grid MIDIs are pre-gated and live on a warped timeline;
+        # comparing their note times against real LRC times would be wrong
+        _apply_time_warp(app, time_warp_path)
     _zero_lag_time(app)
     _press_space_after_init()
     app.run()
