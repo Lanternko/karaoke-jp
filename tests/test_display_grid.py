@@ -241,3 +241,20 @@ def test_flat_skin_respects_padding_contract(tmp_path) -> None:
     # body starts right at the padding edge
     assert left.getpixel((pad + skin.RADIUS, mid_row))[3] == 255
     assert right.getpixel((skin.SEG_W - 1 - pad - skin.RADIUS, mid_row))[3] == 255
+
+
+# ---------- drop_fragments absorb behavior ----------
+
+def test_fragment_absorbs_into_touching_previous_tail() -> None:
+    # 0.05s sliver right after a real note, same pitch: tail extends
+    notes = [(1.0, 1.5, 60), (1.52, 1.57, 60)]
+    kept, removed = mdg.drop_fragments(notes, min_note=0.09)
+    assert removed == 1
+    assert kept == [(1.0, 1.57, 60)]
+
+
+def test_fragment_far_or_offpitch_still_drops() -> None:
+    notes = [(1.0, 1.5, 60), (1.8, 1.85, 60), (2.0, 2.05, 67)]
+    kept, removed = mdg.drop_fragments(notes, min_note=0.09)
+    assert removed == 2
+    assert kept == [(1.0, 1.5, 60)]  # 0.3s gap / 7 semitones: both dropped

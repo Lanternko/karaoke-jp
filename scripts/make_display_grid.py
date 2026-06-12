@@ -59,8 +59,24 @@ LINE_ONSET_TOLERANCE = 0.1
 
 
 def drop_fragments(notes: list[Note], *, min_note: float) -> tuple[list[Note], int]:
-    kept = [n for n in notes if n[1] - n[0] >= min_note]
-    return kept, len(notes) - len(kept)
+    """Absorb-or-drop sliver fragments (< min_note).
+
+    A fragment that touches the previous kept note (gap <= 50ms) within ±2
+    semitones is folded into that note's tail instead of vanishing — it is
+    almost always a transcription split of the same sung note. Benchmark-
+    proven on MIR-ST500 + Kiritan (all three of COn/COnP/COnPOff up vs pure
+    dropping; see benchmarks/*/RESULTS.md note-cleanup ablation).
+    """
+    out: list[list[float | int]] = []
+    removed = 0
+    for s, e, p in sorted(notes):
+        if e - s >= min_note:
+            out.append([s, e, p])
+            continue
+        removed += 1
+        if out and s - out[-1][1] <= 0.05 and abs(p - out[-1][2]) <= 2:
+            out[-1][1] = max(out[-1][1], e)  # absorb into previous tail
+    return [tuple(n) for n in out], removed
 
 
 def absorb_wiggles(notes: list[Note], *, max_dur: float = 0.22) -> tuple[list[Note], int]:
