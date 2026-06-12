@@ -131,3 +131,9 @@ PITCH gold (note-level majority KPI), exactly as docs/pitch-benchmark.md
 always stated — absolute COn against it is meaningless for any model, and
 cross-model rankings on it do not transfer. The proper absolute instrument
 is MIR-ST500/Kiritan, where york135's >=0.8 intuition holds for his model.
+
+## GAME seg-threshold 0.3 cross-validation (2026-06-12)
+
+Kiritan sweep found seg 0.2->0.3 helps; confirmed here on separated vocals
+(N=82): COn .732->.740, COnP .655->.669, COnPOff .411->.416. Both domains
+agree -> GAME_SEG_THRESHOLD=0.3 promoted into run_game_chain (pinned).

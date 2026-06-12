@@ -186,3 +186,17 @@ ends: MAE, median AE, P90 AE, and percentage within 50 ms.
 - Eval JSONs: `phone_boundary/eval_mms_ja_ignore_cl.json`,
   `phone_boundary/eval_mms_fa_ignore_cl.json`,
   `phone_boundary_phrase/eval_sofa_ignore_cl.json`
+
+## GAME threshold sweep (2026-06-12)
+
+seg/est threshold grid on timefix GT. est (presence) is a dead knob;
+**seg (boundary) 0.2->0.3 lifts all three metrics** by cutting spurious
+boundary splits:
+
+| config | COn | COnP | COnPOff | notes |
+|---|---|---|---|---|
+| default seg0.2/est0.2 | 0.862 | 0.644 | 0.502 | 11506 |
+| **seg0.3/est0.4** | **0.872** | **0.658** | **0.513** | 11179 |
+
+Cross-validated on MIR-ST500 separated vocals (COn .732->.740, COnPOff
+.411->.416) -> promoted into run_game_chain as GAME_SEG_THRESHOLD=0.3.

@@ -33,6 +33,13 @@ GAME_MODEL = GAME_DIR / "pretrained" / "GAME-1.0-large" / "model.pt"
 
 POSTFIX_FLAGS = ["--extend-sustains", "--keep-repeats"]
 
+# Boundary decoding threshold for GAME's segmenter. 0.3 (vs default 0.2)
+# cuts spurious boundary splits: validated on BOTH benchmark domains —
+# Kiritan a cappella (COn .862->.872, COnPOff .502->.513) and MIR-ST500
+# separated vocals (COn .732->.740, COnPOff .411->.416); notes -3%.
+# See benchmarks/*/RESULTS.md threshold sweep (2026-06-12).
+GAME_SEG_THRESHOLD = "0.3"
+
 
 def _run(args: list[str], cwd: Path | None = None) -> None:
     subprocess.run(args, check=True, cwd=cwd)
@@ -68,7 +75,8 @@ def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
         wav = tmp_p / vocals_p.name
         wav.symlink_to(vocals_p)
         _run([str(GAME_PY), "infer.py", "extract", str(wav),
-              "-m", str(GAME_MODEL), "-l", language, "--output-formats", "mid"],
+              "-m", str(GAME_MODEL), "-l", language, "--output-formats", "mid",
+              "--seg-threshold", GAME_SEG_THRESHOLD],
              cwd=GAME_DIR)
         game_mid = wav.with_suffix(".mid")
         pf_mid = tmp_p / "postfix.mid"
