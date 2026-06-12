@@ -89,3 +89,45 @@ same-front-end comparison). Their published number: COnPOff 0.574
   are a first-order term.
 - Dead-link retry (android client): 0/18 recovered — N=82 is final unless
   the authors' cached audio is obtained by email.
+
+## ROSVOT out-of-the-box (2026-06-12) — large negative result
+
+ROSVOT (ACL 2024, official checkpoints, M4Singer-trained) run on the same
+82 stems WITHOUT word-boundary annotations (RWBD predictor active, which is
+the honest "no annotations available" condition for in-the-wild use):
+
+| tolerance | COn | COnP | COnPOff |
+|---|---|---|---|
+| 50ms | 0.219 | 0.169 | 0.108 |
+| 100ms | 0.432 | — | — |
+
+Far below its published zero-shot 0.474 COnPOff. Diagnosis (see Kiritan
+section): without real word_durs conditioning its note boundaries are
+coarse — Kiritan COn jumps 0.41→0.75 going 50→100ms tolerance. ROSVOT is
+an annotation tool that assumes word boundaries exist; out-of-the-box on
+unannotated audio it is not competitive with GAME or CE+CTC. (A fair
+best-case variant — feeding our MMS mora boundaries as word_durs — is
+possible future work; our pipeline produces exactly that input.)
+
+## The chidori-gold reference question (york135's challenge, 2026-06-12)
+
+york135 (CE+CTC author) flagged: "COn 0.55 @100ms should have raised alarm;
+the reference is almost certainly wrong; this song should be >=0.8 @100ms."
+Verified empirically:
+
+| reference | CE+CTC COn@100ms | GAME union COn@100ms |
+|---|---|---|
+| our chidori humangold (as-is) | 0.513 | 0.528 |
+| + global shift sweep (best) | 0.583 | — |
+| onsets re-anchored to MMS mora onsets | 0.580 | 0.568 |
+
+BOTH models cap at ~0.55-0.58 against our gold under every anchoring —
+while the same two models score 0.78-0.86 COn on MIR-ST500/Kiritan.
+Quantified: 54% of gold onsets differ >50ms from acoustic (MMS) onsets;
+re-anchoring fixes the easy part but the **note inventory itself**
+(mora-grid segmentation, karaoke-bar merge conventions, melisma handling)
+is not MIREX-convention singing transcription. Conclusion: our gold is a
+PITCH gold (note-level majority KPI), exactly as docs/pitch-benchmark.md
+always stated — absolute COn against it is meaningless for any model, and
+cross-model rankings on it do not transfer. The proper absolute instrument
+is MIR-ST500/Kiritan, where york135's >=0.8 intuition holds for his model.

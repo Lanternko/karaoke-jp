@@ -109,3 +109,80 @@ correcting lifts e.g. song 03 COn 0.10→0.95. `gt_timefix.json` = transposition
   (16/50 songs) and a time-shift fix (5/50) before either model could be
   fairly scored — a fully automatic RMVPE-based GT audit protocol that
   generalizes to any singing dataset.
+
+## ROSVOT out-of-the-box (2026-06-12)
+
+Same protocol as MIR-ST500 section (no word_durs; RWBD active). N=50,
+timefix GT: COn 0.414 / COnP 0.290 / COnPOff 0.190 @50ms; COn 0.745 @100ms.
+The 50→100ms jump (+33pp) shows systematic boundary jitter at the
+50-100ms scale — the predicted-word-boundary effect, not pitch errors.
+Three-way @50ms on identical input: GAME 0.862 > CE+CTC 0.860 >> ROSVOT 0.414.
+
+## Phoneme-boundary alignment benchmark (MMS/SOFA, 2026-06-12)
+
+This is a separate benchmark from the note-transcription tables above. GAME,
+CE+CTC, and ROSVOT emit notes and are scored with COn/COnP/COnPOff; MMS and
+SOFA emit lyric/phone timings and are scored against Kiritan `mono_label`
+phoneme boundaries.
+
+**Protocol.** N=50, 20,291 evaluated phones. Source labels are
+`mono_label/*.lab`; `pau/br/SP/AP/<SP>/<AP>/cl` are ignored for evaluation.
+`cl` is ignored because the released Japanese SOFA model treats it as a
+silence-class label. Metrics are absolute boundary errors over phone starts and
+ends: MAE, median AE, P90 AE, and percentage within 50 ms.
+
+| system | input packaging | boundary MAE | median AE | P90 AE | <=50ms |
+|---|---:|---:|---:|---:|---:|
+| **SOFA JPN v0.0.2b** ⚠trained-on-Kiritan | phrase tokens from Kiritan `pau/br` | **0.018s** | **0.007s** | **0.053s** | **89.3%** |
+| MMS_FA (torchaudio bundle) zero-shot | full phone sequence | 0.112s | 0.043s | 0.184s | 56.0% |
+| MMS-JA karaoke ckpt zero-shot | full phone sequence | 0.218s | 0.055s | 0.197s | 46.7% |
+| SOFA JPN v0.0.2b | whole song as one token | 3.076s | 0.008s | 0.085s | 82.4% |
+
+> **⚠ THIS IS NOT A FAIR SOFA-vs-MMS TEST (reframed 2026-06-12).** The released
+> SOFA JPN model's `data_providers.md` lists its training data as:
+> Amanoshi Cipher, JSUT, Tohouku itako, **Tohouku kiritan**, Namine ritsu,
+> No.7, Ofuton P, Oniku kurumi, PJS, Zundamon. Kiritan is in there.
+>
+> Critically, **the release discloses no train/test split** — no list of which
+> songs/versions/annotations were used. Consequences:
+> - We **cannot quantify** the contamination, and we **cannot** even fall back
+>   to "test SOFA on held-out Kiritan songs" because we don't know which are held out.
+> - So this table is **not** a SOFA-vs-MMS generalization comparison. It is a
+>   **MMS-on-SOFA's-training-distribution sanity check**: MMS_FA/MMS-JA have
+>   NOT seen any of these corpora, so their 112/218 ms ARE clean zero-shot
+>   numbers; SOFA's 18 ms is measured on (part of) its own training set and is
+>   not comparable.
+> - Constructive flip: the other 9 corpora (PJS, JSUT, Namine Ritsu, …) are
+>   all fair, unseen test sets **for MMS** — a route to a real Japanese
+>   clean-singing phone-boundary benchmark, reported honestly as such.
+>
+> On a domain SOFA did NOT train on (our separated polyphonic vocals), SOFA
+> collapses — see `tmp/sofa-ourgold/RESULTS.md`.
+>
+> Sources: SOFA repo https://github.com/qiuqiao/SOFA · JPN model release
+> https://github.com/colstone/SOFA_Models/releases/tag/JPN-V0.0.2b · training
+> list in the model bundle's `data_providers.md`.
+
+**Read.**
+
+1. **SOFA is the clear winner on clean Japanese singing phone boundaries** when
+   given phrase-level transcript tokens. The median boundary error is only 7 ms;
+   even P90 is ~53 ms, which is already in karaoke-grade territory.
+2. **Input packaging matters more than the model headline.** Feeding SOFA the
+   entire song as one token looks good by median but catastrophically fails on
+   repeated sections (MAE 3.08 s). Using Kiritan's `pau/br` to form phrase
+   tokens gives SOFA silence anchors and removes the outlier tail.
+3. **MMS is usable but not competitive on this clean Japanese phone-boundary
+   task.** The original MMS_FA bundle beats the karaoke-adapted MMS-JA here,
+   even though MMS-JA wins on some polyphonic lyric-alignment cases. This is
+   consistent with the Jamendo finding: domain and language adaptations have
+   orthogonal strengths.
+
+**Implementation artifacts.**
+
+- Driver: `phone_boundary_benchmark.py`
+- MMS outputs: `phone_boundary/mms_ja_htk`, `phone_boundary/mms_fa_htk`
+- SOFA phrase outputs: `phone_boundary_phrase/sofa_segments/htk/phones`
+- Eval JSONs: `phone_boundary/eval_mms_ja_ignore_cl.json`,
+  `phone_boundary/eval_mms_fa_ignore_cl.json`,
+  `phone_boundary_phrase/eval_sofa_ignore_cl.json`

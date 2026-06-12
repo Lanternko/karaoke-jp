@@ -315,3 +315,22 @@ FZZ F0 修正的同型機制 — 方向沒錯,但沒引文獻、沒在公開基�
 - 資料集:MIR-ST500(同上);Kiritan github.com/mmorise/kiritan_singing;
   PJS arxiv.org/abs/2006.02959;GTSinger arxiv.org/abs/2409.13832;
   JamendoLyrics github.com/f90/jamendolyrics;MIREX 2024 alignment wiki
+
+## 8. 開源可跑性審計(2026-06-12 完結)
+
+「拿到權重、且能在我們的『無標註音訊』條件下跑」的系統已窮盡:
+
+| 系統 | 權重 | 無標註條件可跑? | 我們的結果 |
+|---|---|---|---|
+| GAME large | ✅ | ✅ | 已跑(雙資料集) |
+| CE+CTC(york135) | ✅ Drive | ✅ | 已跑 + retrain 進行中 |
+| ROSVOT | ✅ Drive | ✅(RWBD 自估邊界) | 已跑 — 無邊界條件下崩(COn .22/.41) |
+| **STARS**(ACL'25) | ✅ HF `verstar/STARS` | ❌ 需 word+phoneme 標註輸入;僅 ZH/EN | 未跑 — MIR-ST500 無歌詞附件、日文音素集不支援 |
+| T3MS(TASLP'25,.610) | ❌ repo 是空殼(僅 README+評測腳本) | — | — |
+| Mel-RoFormer(SOTA .625) | ❌ 無公開 repo | — | — |
+| MusicYOLO | code ✅;ckpt 僅 SSVD 版 | 部分 | 未跑(無 MIR-ST500 版 ckpt) |
+| Omnizart/VOCANO | ✅(舊) | ✅ | 未跑 — 文獻已示弱於現有三者(ISMIR2014 toolbox .499) |
+
+結論:**no-annotation 開源戰場已打完**(GAME/CE+CTC/ROSVOT);STARS 與
+ROSVOT-with-boundaries 屬「給定我們 MMS 邊界的最佳條件」未來實驗
+(我們的管線正好產這種輸入)。紙面 SOTA(Mel-RoFormer/T3MS)均不可得。
