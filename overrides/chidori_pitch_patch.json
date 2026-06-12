@@ -3,6 +3,8 @@
     "at": 52.4,
     "from": 63,
     "pitch": 51,
-    "note": "verse1 たぶん の た — Kojek ear + gold = Eb3; classic fallback filled Eb4 (octave up). Mirror phrase at 140.31 (verse2) is already Eb3 in the union, which is the evidence."
+    "start": 52.36,
+    "end": 52.54,
+    "note": "verse1 たぶん の た — Kojek ear + gold = Eb3. ENSURE semantics: the June-10 extract mislabeled it Eb4 (relabel applies); the seg0.3 extract drops the note entirely (insert applies). Mirror phrase at 140.31 (verse2) has it correct in both, which is the evidence."
   }
 ]

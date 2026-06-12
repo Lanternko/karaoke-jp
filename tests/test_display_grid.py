@@ -258,3 +258,21 @@ def test_fragment_far_or_offpitch_still_drops() -> None:
     kept, removed = mdg.drop_fragments(notes, min_note=0.09)
     assert removed == 2
     assert kept == [(1.0, 1.5, 60)]  # 0.3s gap / 7 semitones: both dropped
+
+
+def test_pitch_patch_ensure_inserts_when_note_missing() -> None:
+    notes = [(53.0, 53.4, 62)]  # the ta note is gone entirely
+    patched, applied, missed = mdg.apply_pitch_patch(
+        notes, [{"at": 52.4, "from": 63, "pitch": 51,
+                 "start": 52.36, "end": 52.54}])
+    assert applied == 1 and missed == []
+    assert patched[0] == (52.36, 52.54, 51)
+
+
+def test_pitch_patch_ensure_skips_insert_on_overlap() -> None:
+    notes = [(52.30, 52.60, 64)]  # window occupied by an off-from note
+    patched, applied, missed = mdg.apply_pitch_patch(
+        notes, [{"at": 52.4, "from": 63, "pitch": 51,
+                 "start": 52.36, "end": 52.54}])
+    assert applied == 0 and missed == [52.4]
+    assert patched == notes

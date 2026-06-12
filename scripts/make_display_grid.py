@@ -119,23 +119,36 @@ def apply_pitch_patch(
 
     Each patch: {"at": <real seconds>, "pitch": <midi>, optional "from":
     <midi>, "note": <why>}. Applies to every note whose span contains `at`
-    (and matches "from" when given). Returns (notes, applied, missed_ats).
+    (and matches "from" when given).
+
+    With "start"/"end" the patch is an ENSURE: if no note contains `at`,
+    a note [start, end, pitch] is inserted (skipped if it would overlap an
+    existing note). Robust to transcription churn — the same sidecar fixes
+    the note whether the extractor mislabels it or drops it entirely.
+    Returns (notes, applied, missed_ats).
     """
-    out = list(notes)
+    out = [list(n) for n in notes]
     applied = 0
     missed: list[float] = []
     for patch in patches:
         t = float(patch["at"])
         pitch = int(patch["pitch"])
         hit = False
-        for i, (s, e, p) in enumerate(out):
-            if s <= t < e and ("from" not in patch or p == int(patch["from"])):
-                out[i] = (s, e, pitch)
+        for n in out:
+            if n[0] <= t < n[1] and ("from" not in patch or n[2] == int(patch["from"])):
+                n[2] = pitch
                 applied += 1
                 hit = True
-        if not hit:
-            missed.append(t)
-    return out, applied, missed
+        if hit:
+            continue
+        if "start" in patch and "end" in patch:
+            s, e = float(patch["start"]), float(patch["end"])
+            if not any(n[0] < e and n[1] > s for n in out):
+                out.append([s, e, pitch])
+                applied += 1
+                continue
+        missed.append(t)
+    return sorted(tuple(n) for n in out), applied, missed
 
 
 def line_starts_from_aligned(aligned_path: str | Path) -> list[float]:
