@@ -33,9 +33,12 @@ outputs/
 # Background images may stay (small)
 !songs/*/background.png
 
-# Allow lyrics + override JSON to be tracked
-!songs/*/lyrics.txt
+# Override JSON stays tracked (the user's own ruby corrections, not copyrighted)
 !overrides/*.json
+
+# Copyrighted song lyrics live in the private karaoke-jp-gold repo (lyrics/).
+# Kept on disk locally as alignment ground truth, but untracked here.
+songs/*/lyrics.txt
 
 # OS
 .DS_Store
@@ -60,6 +63,16 @@ tmp/
 
 # gold/ is a private submodule (copyright-sensitive melody transcriptions);
 # its contents live in the private karaoke-jp-gold repo, not here.
+
+# Copyrighted-background figures (overlaid on album art / MV / anime frames) —
+# backed up in the private karaoke-jp-gold repo (figures/), untracked here.
+# Only pure-background / original figures stay tracked.
+figures/tuki-zero_with_bg.png
+figures/chidori_gameplay.png
+figures/chidori_cover.png
+figures/night-dancer_cover.png
+figures/bocchi-guitar_with_bg.png
+figures/bocchi-guitar_frame.png
 
 # SOFA checkpoints (2.2GB, re-downloadable: github.com/colstone/SOFA_Models JPN-V0.0.2b)
 benchmarks/sofa_models/

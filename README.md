@@ -9,33 +9,27 @@
 
 ## 成果
 
-<img src="figures/tuki-zero_with_bg.png" width="100%" alt="tuki-zero 橫式滿版：音高方塊 + 雙行逐字歌詞 + 振假名，疊在專輯封面上" />
+> 以下截圖一律用**純底**版面展示。pipeline 也支援把畫面疊在原 MV／專輯封面／靜態圖上，但那是版權衍生、僅限個人練唱自用，故不放進公開 repo。
+
+<img src="figures/hud_v14_frame.png" width="100%" alt="canonical v14 純底：音高方塊 + songinfo HUD（音符計數、音高傾向箭頭、音域/調性 gauge）" />
 
 <table>
   <tr>
-    <td width="50%"><img src="figures/hud_v14_frame.png" alt="canonical v14：音高方塊 + songinfo HUD（音符計數、音高傾向箭頭、音域/調性 gauge）" /></td>
-    <td width="50%"><img src="figures/chidori_gameplay.png" alt="千鳥：疊在原 MV 上，icon 計數 + 音域/調性 gauge + 雙行歌詞" /></td>
+    <td width="33%"><img src="figures/tuki-zero_frame_verse.png" alt="主歌：雙行逐字歌詞 + 振假名" /></td>
+    <td width="33%"><img src="figures/tuki-zero_frame_chorus.png" alt="副歌：逐字 wipe" /></td>
+    <td width="33%"><img src="figures/tuki-zero_frame_tail.png" alt="句尾：延音音高方塊" /></td>
   </tr>
   <tr>
-    <td align="center"><sub>橫式 16:9 — canonical v14 HUD（純底）</sub></td>
-    <td align="center"><sub>橫式 16:9 — 疊在原 MV 背景上</sub></td>
+    <td align="center"><sub>主歌 — 雙行逐字 + 振假名</sub></td>
+    <td align="center"><sub>副歌 — 逐字 wipe</sub></td>
+    <td align="center"><sub>句尾 — 延音方塊</sub></td>
   </tr>
 </table>
 
-<table>
-  <tr>
-    <td width="33%"><img src="figures/night-dancer_cover.png" alt="night-dancer 直式 9:16 封面卡" /></td>
-    <td width="33%"><img src="figures/chidori_cover.png" alt="千鳥 封面卡（明朝體標題）" /></td>
-    <td width="33%"><img src="figures/tuki-zero_frame_chorus.png" alt="零 副歌畫面" /></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>直式 9:16 封面卡（手寫風）</sub></td>
-    <td align="center"><sub>明朝體標題卡產生器</sub></td>
-    <td align="center"><sub>副歌逐字 wipe</sub></td>
-  </tr>
-</table>
+<img src="figures/tuki-zero_melody.png" width="100%" alt="melody.mid 音符散佈圖：626 顆音符、音高 49–79" />
+<p align="center"><sub>M2 抽出的 melody.mid（626 顆音符、音高 49–79）</sub></p>
 
-支援 **橫式 16:9** 與 **直式 9:16** 兩種版面；背景可用原 MV、靜態圖、純黑底或 MID2BAR 預設藍漸層。
+支援 **橫式 16:9** 與 **直式 9:16** 兩種版面；背景可用原 MV、靜態圖、純黑底或 MID2BAR 預設藍漸層（純底／靜態圖可公開分享，疊原片僅限自用）。
 
 ---
 
