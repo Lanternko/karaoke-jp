@@ -7,6 +7,10 @@
   {"at": 94.46, "pitch": 70, "start": 94.36, "end": 94.62, "note": "Tu-tu-lu hook 5/6 (A4)"},
   {"at": 94.82, "pitch": 70, "start": 94.69, "end": 94.99, "note": "Tu-tu-lu hook 6/6 (A4)"},
   {"lyric_retime": [89.0, 106.0], "to": [92.19, 94.99],
-   "note": "The 'Tu-tu-lu-tu-lu' lyric line was stretched 90.11-105.83 (15.7s): the CTC matched its trailing tu/lu/tu/lu syllables to interlude percussion at 99/101/104/105s. The real scat is the ~2.7s hook (92.19-94.99) — the SAME line at 154.6-157.1s aligns correctly to 2.47s, proving the alignment can be tight. Compress this occurrence onto the hook so the lyric wipes with the bars. Display-only; aligned_midi.json untouched."}
+   "note": "The 'Tu-tu-lu-tu-lu' lyric line was stretched 90.11-105.83 (15.7s): the CTC matched its trailing tu/lu/tu/lu syllables to interlude percussion at 99/101/104/105s. The real scat is the ~2.7s hook (92.19-94.99) — the SAME line at 154.6-157.1s aligns correctly to 2.47s, proving the alignment can be tight. Compress this occurrence onto the hook so the lyric wipes with the bars. Display-only; aligned_midi.json untouched."},
+  {"drop_notes": [90.10, 91.60],
+   "note": "HAND CORRECTION (per-song, display-only). Garbled lead-in before the first Tu-tu-lu hook — GAME/alignment put a low p55-58 phrase here that the clean second occurrence (154.6s) does not have. Removed so the first Tu-tu-lu is just the A4 hook, matching the second. The automated chain could not segment this cleanly (the first chorus is followed by an instrumental break that the aligner fills)."},
+  {"drop_notes": [95.50, 97.50],
+   "note": "HAND CORRECTION (per-song, display-only). The 'phantom interlude notes after the first Tu-tu-lu' Kojek flagged: a GAME-extracted vocal run (95.95-97.39) with no lyric, sitting in what is otherwise the instrumental break. The second occurrence goes straight to the next verse with no such tail. Removed by hand."}
 ]
 

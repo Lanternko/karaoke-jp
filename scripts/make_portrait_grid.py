@@ -202,6 +202,32 @@ def apply_melisma_splits(
     return out, applied
 
 
+def apply_note_drops(
+    notes: list[Note], patches: list[dict],
+) -> tuple[list[Note], int]:
+    """Manual per-song removal of display notes in explicit time ranges.
+
+    Last resort when the automated chain (GAME extraction + alignment)
+    garbles a passage no heuristic cleanly fixes — e.g. night-dancer's first
+    'Tu-tu-lu' chorus, where the aligner smears the line over an instrumental
+    break and GAME leaves a vocal-run tail with no lyric. An override
+    {"drop_notes":[lo,hi]} removes every note whose onset is in [lo,hi].
+    Display-layer, per-song (override file), and explicitly annotated as a
+    hand correction so it's never mistaken for the automated output.
+    """
+    ranges = [p["drop_notes"] for p in patches if "drop_notes" in p]
+    if not ranges:
+        return notes, 0
+    out: list[Note] = []
+    dropped = 0
+    for n in notes:
+        if any(float(lo) <= n[0] <= float(hi) for lo, hi in ranges):
+            dropped += 1
+            continue
+        out.append(n)
+    return out, dropped
+
+
 # ---- bar lines: one row-group per sentence, greedy to the right edge ----
 
 def _close_bar_row(bars: list[dict], cursor: float, quarter: float,
@@ -510,6 +536,9 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     # mora-sized note is the only thing inside the override window.
     notes, melisma = apply_melisma_splits(notes, patches)
 
+    # manual per-song removal of garbled passages (annotated in the override)
+    notes, hand_dropped = apply_note_drops(notes, patches)
+
     qnotes = mdg.quantize(notes, quarter=quarter)
     line_of = mdg.assign_lines(notes, line_starts)
 
@@ -549,7 +578,7 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
                f"lyric_lines={len(lyric_lines)} "
                f"dropped={dropped} wiggles={wiggles} patched={patched} "
                f"mora_split={mora_split} melisma={melisma} ghosts={ghosts} "
-               f"lyric_retime={retimed} "
+               f"hand_dropped={hand_dropped} lyric_retime={retimed} "
                f"pitch=[{pitch_min},{pitch_max}] quarter={quarter:.3f}s")
 
 
