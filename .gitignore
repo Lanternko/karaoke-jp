@@ -54,16 +54,9 @@ third_party/*
 !third_party/.gitkeep
 !third_party/README.md
 
-# Local OMR scratch space
-tmp/.venv-omr/
-tmp/codex_cache_*/
-tmp/codex_cache_sheet.jpg
-tmp/pipmeta/
-tmp/aina-kakumei/*.html
-tmp/aina-kakumei/*.bin
-tmp/aina-kakumei/*.mid
-tmp/aina-kakumei/*.mrc
-tmp/aina-kakumei/mymusic5/
+# tmp/ is scratch space (OMR crops, QA renders, ablation dumps) — never tracked.
+# Note: tmp/aina-kakumei/ holds crops of copyrighted sheet music — must stay out of git.
+tmp/
 
 # Gold pitch references are irreplaceable — exempt from the global *.mid ignore
 !gold/**/*.mid
@@ -78,10 +71,6 @@ benchmarks/SOFA/
 benchmarks/jamendolyrics/
 benchmarks/retrain/
 benchmarks/*/rosvot_out/
-
-# Scratch QA renders / ablation dumps (re-derivable)
-tmp/alignment-ablation/
-tmp/*.tgz
 
 # Presentation deck — separate sub-project, kept out of this repo
 decks/
