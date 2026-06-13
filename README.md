@@ -155,7 +155,7 @@ karaoke-jp/
 ├── overrides/        # 每首歌的 ruby override JSON（gikun 用）
 ├── figures/          # README 截圖（純底版；疊版權背景的不公開）
 ├── third_party/      # 外部 repo（gitignored，setup script clone）
-└── spec.md  CLAUDE.md  MEMORY.md  docs/  pyproject.toml
+└── spec.md  CLAUDE.md  docs/  pyproject.toml
 ```
 
 ---
@@ -166,7 +166,6 @@ karaoke-jp/
 |---|---|
 | [spec.md](spec.md) | 完整技術規格、pipeline、里程碑、版權分析 |
 | [CLAUDE.md](CLAUDE.md) | 工作指南、關鍵決策、踩坑（NEVER 清單）、環境隔離 |
-| [MEMORY.md](MEMORY.md) | 決策歷史、為什麼選 X 不選 Y |
 | [docs/pitch-benchmark.md](docs/pitch-benchmark.md) | 音高 gold 方法論、benchmark、canonical 鏈 |
 | [docs/display-grid.md](docs/display-grid.md) | 標準化 bar 顯示系統（grid + 時間 warp） |
 
@@ -179,7 +178,7 @@ karaoke-jp/
 - **不做連續 f0 曲線** —— 要的是 JOYSOUND 風格離散音高方塊。
 - **不用 pykakasi 做振假名**（沒形態素解析，常選錯讀音）；**不用 CREPE 做 pitch**（已被 RMVPE / SOME 取代）。
 
-更多踩坑見 [MEMORY.md](MEMORY.md)。
+更多設計取捨與技術細節見 [spec.md](spec.md) 與 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)。
 
 ## License
 

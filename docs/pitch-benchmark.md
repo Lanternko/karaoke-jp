@@ -1,7 +1,7 @@
 # Pitch Benchmark — gold 方法論、計分板、canonical 鏈
 
 > 2026-06-10 整輪「樂譜層音高推論」工作的耐久文檔。
-> 細節決策與踩坑在 [MEMORY.md](../MEMORY.md)；本檔是可重現的全貌。
+> 細節決策與踩坑記錄為內部私有；本檔是公開、可重現的全貌。
 > ⚠ 全域 `*.mid` gitignore 讓所有工作區 MIDI（含 tmp/ 的 gold）從不進 git —
 > 不可再生資產存在 **`gold/`**，現為**私有 submodule**（`Lanternko/karaoke-jp-gold`，private；
 > 含版權歌曲旋律轉譜故不公開）。dev 機用 `git submodule update --init` 取得。

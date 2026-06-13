@@ -4,35 +4,13 @@
 日式卡拉 OK 影片自動生成器（JOYSOUND 風格：離散音高方塊 + 逐字歌詞 wipe + 振假名 + 自選背景）。**自用練唱**，不上傳。
 
 ## 狀態
-**M0-M4 全 wire（2026-04-28）**；**timing pivot 到 mora→note alignment（2026-05-01）**；**M8 Gradio GUI 完成（2026-05-02，commit `d1d6157`）**。三首歌端到端跑通：
-
-| song | bg 來源 | mp4 路徑 |
-|---|---|---|
-| tuki-zero (`零-zero-`) | YT Official Audio = album art | `outputs/tuki-zero/karaoke.mp4` |
-| bocchi-guitar (`ギターと孤独と蒼い惑星`) | YT Lyric Video MV（含燒入字，user accepted） | `outputs/bocchi-guitar/karaoke.mp4` |
-| chidori (`ヨルシカ — 千鳥`) | 靜態 bg（Lyric Video 有燒入字故不用） | `outputs/chidori/karaoke.mp4` |
-
-三首都 1080p60，duration 跟原曲對齊到 sample，pitch bars + per-char wipe + furigana 全部達成。
-
-下一步：**M6 Snakemake 批次** / **M7 Yomikata + override JSON**（M5 已完成 20% vocal mix，可選多音量版）。
-
-**音高里程碑（2026-06-10）**：樂譜層音高推論整輪完成 — chidori 全驗證 gold（sheet+人耳）、
-雙歌 benchmark、canonical 雙鏈（classic scorefix + GAME union）。chidori note-level
-52.6%→**72.8%**。完整方法論與計分板見 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)；
-不可再生 gold 存在私有 submodule `gold/`（`Lanternko/karaoke-jp-gold`，private；版權旋律轉譜不公開，dev 機 `git submodule update --init` 取得）。
-**Canonical v14（2026-06-12）**：GAME seg0.3 + MMS CTC timing + v11 display grid
-（constant-speed slots + breath gaps + fragment absorb + ensure pitch patch）+
-flat bar skin。雙歌耳測驗收（chidori + byoushin），公開 benchmark 全跑完
-（MIR-ST500 / Kiritan / ROSVOT / phone boundary）。版本設定集中在
-[config/versions.json](config/versions.json)；skills 參數化版本號，
-升級 v15 只需改 canonical pointer。
-直式（9:16）測試曲：chidori + night-dancer（byoushin 缺 MV，補齊前不作 portrait demo）。
-注意：`melody_markers.gamescore*.mid` 是 display-timeline MIDI；真實時間的旋律在
-`*.union.mid`（run_game_chain 2026-06-12 起會保留；舊歌重跑 chain 取得）。
-已知坑：RMS VAD 會把輕聲段（如 night-dancer 的 Tu-tu-lu hook）標成非人聲，
-display grid 的 gating 因此砍掉 union 補回的音——portrait grid 已改用
-「RMS voiced ∪ MMS char 證據」聯集 gating，橫式 v15 應跟進。
-接手先讀 [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md)。
+M0–M4 全 wire；timing 用 MMS CTC forced alignment（**ASR 退出 timing 鏈**）；M8 Gradio GUI 完成。
+**Canonical v14**：GAME note transcription + MMS CTC timing + v11 display grid（constant-speed
+slots + breath gaps + fragment absorb）+ flat bar skin。chidori note-level **72.8%**，公開
+benchmark（MIR-ST500 / Kiritan / ROSVOT / phone boundary）全跑完。方法論與計分板見
+[docs/pitch-benchmark.md](docs/pitch-benchmark.md)。版本設定集中在
+[config/versions.json](config/versions.json)（`canonical` pointer，目前 v14；升級只需加 profile + 改 pointer）。
+不可再生 gold 在私有 submodule `gold/`（`Lanternko/karaoke-jp-gold`，private；dev 機 `git submodule update --init`）。
 
 ## M8 GUI（已實作 2026-05-02）
 **目標**：clone repo → 4 venv setup → 一句指令啟 GUI → 4 分鐘歌約 5–10 分鐘出 mp4。本機 only（預設 `127.0.0.1:7860`，**不開 share**；`--host 0.0.0.0` 才接外網）。
@@ -67,11 +45,10 @@ display grid 的 gating 因此砍掉 union 補回的音——portrait grid 已�
 
 ## 文件套件
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
-- [MEMORY.md](MEMORY.md) — 關鍵決策、踩坑、為什麼選 X 不選 Y
 - [config/versions.json](config/versions.json) — 版本 profile（canonical pointer + 各版參數）
 - [docs/pitch-benchmark.md](docs/pitch-benchmark.md) — 音高 gold 方法論、benchmark、canonical 鏈
 - [docs/display-grid.md](docs/display-grid.md) — 標準化 bar 顯示系統（grid + 時間 warp）
-- [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md) — 最新交接快照（未 commit 清單、待辦）
+- `MEMORY.md` — 決策史 / 負結果帳本（**內部私有，不在公開 repo**；本地 untracked）
 - 本檔（CLAUDE.md）— 工作指南
 
 ## 關鍵決策（不要再爭論）

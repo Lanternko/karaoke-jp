@@ -74,6 +74,12 @@ figures/night-dancer_cover.png
 figures/bocchi-guitar_with_bg.png
 figures/bocchi-guitar_frame.png
 
+# Internal lab-notebook docs kept private (decision history / negative-results
+# ledger / agent-collab state). Full copies live in the private karaoke-jp-gold
+# repo (docs/); kept on disk locally but never public.
+MEMORY.md
+AGENTS.md
+
 # SOFA checkpoints (2.2GB, re-downloadable: github.com/colstone/SOFA_Models JPN-V0.0.2b)
 benchmarks/sofa_models/
 
