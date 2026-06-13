@@ -60,6 +60,33 @@ def _char_windows(aligned: list[dict], *, pad: float = 0.35) -> list[tuple[float
     return merged
 
 
+def drop_isolated_unvoiced(
+    notes: list[Note],
+    voiced: list[tuple[float, float]],
+    *,
+    min_gap: float = 1.2,
+) -> tuple[list[Note], int]:
+    """Drop notes that are RMS-unvoiced AND isolated on both sides.
+
+    The CTC stretches a once-written scat line (night-dancer's Tu-tu-lu)
+    across the whole repeated section, so stray char windows deep in the
+    interlude rescue separation-bleed ghosts — one lone bar every couple of
+    seconds. Truly sung soft passages come in clusters (neighbours within
+    min_gap), so requiring isolation on BOTH sides kills only the strays.
+    """
+    out: list[Note] = []
+    dropped = 0
+    for k, (s, e, p) in enumerate(notes):
+        sung = any(s < we and e > ws for ws, we in voiced)
+        prev_gap = s - notes[k - 1][1] if k > 0 else float("inf")
+        next_gap = notes[k + 1][0] - e if k + 1 < len(notes) else float("inf")
+        if not sung and prev_gap > min_gap and next_gap > min_gap:
+            dropped += 1
+            continue
+        out.append((s, e, p))
+    return out, dropped
+
+
 def _union_windows(a: list[tuple[float, float]],
                    b: list[tuple[float, float]]) -> list[tuple[float, float]]:
     merged: list[tuple[float, float]] = []
@@ -159,6 +186,7 @@ def build_bar_lines(
     breath_gap: float,
     pause_gap: float,
     pause_space: float,
+    squeeze_max: float,
     quarter: float,
 ) -> list[dict]:
     """One row-group per lyric sentence; pack notes left->right and wrap to a
@@ -170,6 +198,10 @@ def build_bar_lines(
     A long in-sentence pause (> pause_gap) opens a WIDE gap (pause_space)
     but never forces a break; an ordinary breath (> breath_gap) opens the
     usual breath_space. Rows alternate A/B in production order.
+
+    Word-style shrink-to-fit: a sentence over budget by at most squeeze_max
+    is compressed onto ONE row (scale = budget/width) instead of dumping a
+    couple of orphan bars onto the next row.
     """
     if not notes:
         return []
@@ -187,22 +219,25 @@ def build_bar_lines(
     for sent in sentences:
         sent_id = line_of[sent[0]]
         sent_start = notes[sent[0]][0]
+
+        spaces = [0.0]
+        for prev, i in zip(sent, sent[1:]):
+            gap_t = notes[i][0] - notes[prev][1]
+            spaces.append(pause_space if gap_t > pause_gap
+                          else breath_space if gap_t > breath_gap else 0.0)
+        slots = [qnotes[i][1] - qnotes[i][0] for i in sent]
+        total = sum(spaces) + sum(slots)
+
+        scale = 1.0
+        if row_budget < total <= row_budget + squeeze_max:
+            scale = row_budget / total
+
         bars: list[dict] = []
         cursor = 0.0
-        prev: int | None = None
-        for i in sent:
-            slot = qnotes[i][1] - qnotes[i][0]
-            if prev is None:
-                space = 0.0
-            else:
-                gap_t = notes[i][0] - notes[prev][1]
-                if gap_t > pause_gap:
-                    space = pause_space
-                elif gap_t > breath_gap:
-                    space = breath_space
-                else:
-                    space = 0.0
-            if bars and cursor + space + slot > row_budget:
+        for k, i in enumerate(sent):
+            space = spaces[k] * scale
+            slot = slots[k] * scale
+            if bars and cursor + space + slot > row_budget + 1e-9:
                 lines.append(_close_bar_row(bars, cursor, quarter, row_idx,
                                             sent_id, sent_start))
                 row_idx += 1
@@ -218,7 +253,6 @@ def build_bar_lines(
                 "real_end": notes[i][1],
             })
             cursor += slot
-            prev = i
         if bars:
             lines.append(_close_bar_row(bars, cursor, quarter, row_idx,
                                         sent_id, sent_start))
@@ -334,6 +368,9 @@ def compute_line_timing(
               help="In-sentence silence over this (s) opens a wide gap, no break.")
 @click.option("--pause-units", type=float, default=1.5, show_default=True,
               help="Width (quarters) of that wide in-sentence pause gap.")
+@click.option("--squeeze-units", type=float, default=2.0, show_default=True,
+              help="A sentence over budget by at most this many quarters is "
+                   "shrunk to fit ONE row instead of wrapping orphan bars.")
 @click.option("--note-window-margin", type=float, default=0.25, show_default=True)
 @click.option("--note-tail-allowance", type=float, default=1.0, show_default=True)
 @click.option("--lead-max", type=float, default=8.0, show_default=True,
@@ -347,9 +384,9 @@ def compute_line_timing(
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
 def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
          gap_units, phrase_gap_units, phrase_split_gap, min_note, breath_gap,
-         breath_units, pause_gap, pause_units, note_window_margin,
-         note_tail_allowance, lead_max, linger, pitch_patch_path,
-         rms_segments_path, out_path):
+         breath_units, pause_gap, pause_units, squeeze_units,
+         note_window_margin, note_tail_allowance, lead_max, linger,
+         pitch_patch_path, rms_segments_path, out_path):
     bpm_2dp = round(float(Path(bpm_file).read_text().strip()), 2)
     quarter = 60.0 / bpm_2dp
     notes: list[Note] = sorted(
@@ -362,13 +399,18 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     # gate to lyric windows ∩ (RMS voiced ∪ MMS char evidence)
     windows = _lyric_windows(aligned_path, margin=note_window_margin,
                              tail_allowance=note_tail_allowance)
+    rms_voiced: list[tuple[float, float]] = []
     if rms_segments_path:
-        voiced = _union_windows(_voiced_windows(rms_segments_path),
-                                _char_windows(aligned))
+        rms_voiced = _voiced_windows(rms_segments_path)
+        voiced = _union_windows(rms_voiced, _char_windows(aligned))
         windows = _intersect_windows(windows, voiced)
     notes = [n for n in notes
              if any(ws <= n[0] < we for ws, we in windows)
              or any(n[0] < we and n[1] > ws for ws, we in windows)]
+
+    ghosts = 0
+    if rms_segments_path:
+        notes, ghosts = drop_isolated_unvoiced(notes, rms_voiced)
 
     line_starts = mdg.line_starts_from_aligned(aligned_path)
     notes, dropped = mdg.drop_fragments(notes, min_note=min_note)
@@ -396,7 +438,8 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
         notes, qnotes, line_of,
         row_budget=row_budget, gap=gap, breath_space=breath_space,
         breath_gap=breath_gap, pause_gap=pause_gap,
-        pause_space=pause_units * quarter, quarter=quarter)
+        pause_space=pause_units * quarter,
+        squeeze_max=squeeze_units * quarter, quarter=quarter)
 
     lyric_lines = build_lyric_lines(aligned)
 
@@ -421,7 +464,7 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     click.echo(f"[portrait-grid] bar_lines={len(bar_lines)} "
                f"lyric_lines={len(lyric_lines)} "
                f"dropped={dropped} wiggles={wiggles} patched={patched} "
-               f"mora_split={mora_split} "
+               f"mora_split={mora_split} ghosts={ghosts} "
                f"pitch=[{pitch_min},{pitch_max}] quarter={quarter:.3f}s")
 
 

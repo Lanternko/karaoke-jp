@@ -32,14 +32,16 @@ FPS = 60
 MARGIN_X = 60
 
 # vertical layout (top -> bottom: bars A, bars B, MV, lyric A, lyric B).
-# Symmetric: top panel 0..480, MV 480..1440 (960 tall, centered), bottom
-# panel 1440..1920 — no dead band at the screen edges.
-BARS_A_TOP = 50
+# Panels: top 0..480, MV 480..1440 (960 tall, centered), bottom 1440..1920.
+# Content hugs the MV: bar rows bottom-anchored against the MV's top edge,
+# lyric rows top-anchored under its bottom edge — padding lives at the
+# screen edges, not between the blocks.
 BAR_AREA_H = 190
-BARS_B_TOP = BARS_A_TOP + BAR_AREA_H + 20      # 260
+BARS_B_TOP = 480 - BAR_AREA_H - 10             # 280
+BARS_A_TOP = BARS_B_TOP - BAR_AREA_H - 14      # 76
 BARS_PANEL = (0, 480)
-LYRIC_A_TOP = 1570
-LYRIC_B_TOP = 1750
+LYRIC_A_TOP = 1490
+LYRIC_B_TOP = LYRIC_A_TOP + 150                # 1640
 LYRIC_PANEL = (1440, 1920)
 
 BARS_Y = {"A": BARS_A_TOP, "B": BARS_B_TOP}
@@ -57,9 +59,9 @@ BAR_H_PX = 14
 # own pitch window, compressing only if a wide row would overflow.
 PX_PER_SEMITONE = 13
 
-COL_BAR_UPCOMING = (150, 150, 150, 255)
+COL_BAR_UPCOMING = (235, 235, 235, 255)
 COL_BAR_WIPED = (255, 140, 0, 255)
-COL_BAR_PREVIEW = (90, 90, 90, 200)
+COL_BAR_PREVIEW = (80, 80, 80, 200)
 COL_TEXT_UPCOMING = (235, 235, 235, 255)
 COL_TEXT_WIPED = (255, 140, 0, 255)
 COL_TEXT_PREVIEW = (150, 150, 150, 230)
