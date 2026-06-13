@@ -18,6 +18,7 @@ MEMORY.md records the evidence.
 """
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,10 @@ def main(vocals: str, fallback_midi: str, f0_path: str, aligned_path: str,
         _run([sys.executable, str(SCRIPTS / "melody_union.py"),
               "--primary", str(pf_mid), "--fallback", fallback_midi,
               "--out", str(union_mid)])
+        # keep the REAL-TIME union melody next to the display MIDI — the
+        # portrait grid (and any other real-time consumer) reads it directly
+        # instead of un-warping the display timeline
+        shutil.copyfile(union_mid, Path(out_path).with_suffix(".union.mid"))
         # standardized display grid (Kojek spec): fixed quarter width, fixed
         # mora/phrase gaps, fixed page span; sync via the warp sidecar that
         # render_mp4 --time-warp consumes

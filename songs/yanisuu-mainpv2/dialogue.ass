@@ -1,0 +1,29 @@
+[Script Info]
+Title: yanisuu-mainpv2 dialogue subtitles
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Dialogue,Noto Sans CJK JP,58,&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,5,1,2,90,90,74,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:12.64,0:00:21.63,Dialogue,田山,0,0,0,,おじさん、ここならタバコ吸えま〜す。
+Dialogue: 0,0:00:23.58,0:00:30.12,Dialogue,佐々木,0,0,0,,2番レジの山田さん、俺の仕事終わりの癒やしだ。
+Dialogue: 0,0:00:31.36,0:00:35.07,Dialogue,田山,0,0,0,,お疲れ〜す。
+Dialogue: 0,0:00:35.08,0:00:36.39,Dialogue,佐々木,0,0,0,,お疲れ様です。
+Dialogue: 0,0:00:38.08,0:00:42.51,Dialogue,田山,0,0,0,,それよか吸いに来たんでしょ？
+Dialogue: 0,0:00:42.52,0:00:45.80,Dialogue,佐々木,0,0,0,,うまいなあ。タバコ。
+Dialogue: 0,0:01:02.00,0:01:05.27,Dialogue,前澤,0,0,0,,山田、すっごい美味しそうに吸うよね。
+Dialogue: 0,0:01:05.28,0:01:11.15,Dialogue,田山,0,0,0,,最近特にうまいです。どっかの私のファンのせいで。
+Dialogue: 0,0:01:11.16,0:01:14.51,Dialogue,小畑,0,0,0,,山田はさ、どんな話してる？
+Dialogue: 0,0:01:14.52,0:01:17.28,Dialogue,田山,0,0,0,,主に私がからかって遊んでる。
+Dialogue: 0,0:01:20.20,0:01:21.72,Dialogue,鈴木,0,0,0,,何持ってんだお前？
+Dialogue: 0,0:01:21.72,0:01:26.45,Dialogue,佐々木,0,0,0,,なんだろうな……お守りっちゅうか。
+Dialogue: 0,0:01:34.28,0:01:36.70,Dialogue,田山,0,0,0,,このまま2人でね。
+Dialogue: 0,0:01:36.70,0:01:39.52,Dialogue,佐々木・田山,0,0,0,,スーパーの裏でヤニ吸うふたり。

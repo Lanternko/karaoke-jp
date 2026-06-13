@@ -67,3 +67,30 @@ tmp/aina-kakumei/mymusic5/
 
 # Gold pitch references are irreplaceable — exempt from the global *.mid ignore
 !gold/**/*.mid
+
+# SOFA checkpoints (2.2GB, re-downloadable: github.com/colstone/SOFA_Models JPN-V0.0.2b)
+benchmarks/sofa_models/
+
+# Benchmark third-party clones + heavyweight derived data (re-clone / re-derive, never vendor)
+benchmarks/CTC_CE_for_AST/
+benchmarks/ROSVOT/
+benchmarks/SOFA/
+benchmarks/jamendolyrics/
+benchmarks/retrain/
+benchmarks/*/rosvot_out/
+
+# Scratch QA renders / ablation dumps (re-derivable)
+tmp/alignment-ablation/
+tmp/*.tgz
+
+# Presentation deck — separate sub-project, kept out of this repo
+decks/
+
+# Benchmark intermediate alignment dumps (re-derivable from RESULTS.md recipe)
+benchmarks/**/mms_fa_htk/
+benchmarks/**/sofa_segments/
+benchmarks/**/*.lab
+benchmarks/**/rosvot_pred.json
+
+# Claude Code local runtime
+.claude/scheduled_tasks.lock

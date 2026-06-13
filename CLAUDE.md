@@ -20,11 +20,18 @@
 雙歌 benchmark、canonical 雙鏈（classic scorefix + GAME union）。chidori note-level
 52.6%→**72.8%**。完整方法論與計分板見 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)；
 不可再生 gold 已存 tracked 的 `gold/`。
-**顯示系統 v10（2026-06-11）**：固定網格 + 時間 warp + 兩輪 Kojek 驗收回饋全修
-（[docs/display-grid.md](docs/display-grid.md)：sprite PADDING 契約、行邊界切分、
-倒數四拍、quick-flip 預覽、--pitch-patch 人耳修正），
-成品 `karaoke...gameunion_v10grid.mp4` 待 Kojek 驗收後切 canonical；
-v8 輪已 commit（c4a2231/e0cceab/9de9b4e），v9/v10 輪改動待 commit —
+**Canonical v14（2026-06-12）**：GAME seg0.3 + MMS CTC timing + v11 display grid
+（constant-speed slots + breath gaps + fragment absorb + ensure pitch patch）+
+flat bar skin。雙歌耳測驗收（chidori + byoushin），公開 benchmark 全跑完
+（MIR-ST500 / Kiritan / ROSVOT / phone boundary）。版本設定集中在
+[config/versions.json](config/versions.json)；skills 參數化版本號，
+升級 v15 只需改 canonical pointer。
+直式（9:16）測試曲：chidori + night-dancer（byoushin 缺 MV，補齊前不作 portrait demo）。
+注意：`melody_markers.gamescore*.mid` 是 display-timeline MIDI；真實時間的旋律在
+`*.union.mid`（run_game_chain 2026-06-12 起會保留；舊歌重跑 chain 取得）。
+已知坑：RMS VAD 會把輕聲段（如 night-dancer 的 Tu-tu-lu hook）標成非人聲，
+display grid 的 gating 因此砍掉 union 補回的音——portrait grid 已改用
+「RMS voiced ∪ MMS char 證據」聯集 gating，橫式 v15 應跟進。
 接手先讀 [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md)。
 
 ## M8 GUI（已實作 2026-05-02）
@@ -45,9 +52,23 @@ v8 輪已 commit（c4a2231/e0cceab/9de9b4e），v9/v10 輪改動待 commit —
 
 **不在 GUI scope**：LLM 修歌詞 / LLM 推 ruby / Whisper transcribe-only 模式 / 多音量版輸出 / share=True / 多歌並行。詳見 NEVER。
 
+## Skills（參數化版本號）
+
+| skill | 用途 |
+|-------|------|
+| `/render-song <song-id>` | 用 canonical 版本跑完整 GAME chain → grid → render（橫式 16:9） |
+| `/render-portrait <song-id>` | 直式 9:16 雙行交替 pitch bar + 歌詞（1080×1920） |
+| `/add-song <url>` | 下載 + 分離 + 準備新歌目錄 |
+| `/bump-version` | 建新版本 profile，比較後升級 canonical |
+| `/check-training` | 查看 GPU 訓練進度（CE+CTC retrain 等） |
+
+版本設定在 `config/versions.json`。`"canonical"` 指向當前生效的 profile（目前 `v14`）。
+所有 skill 從 versions.json 讀參數 — **升級 v15 只需加 profile + 改 canonical pointer，不需要改 skill 本身**。
+
 ## 文件套件
 - [spec.md](spec.md) — 完整技術規格、pipeline、里程碑
 - [MEMORY.md](MEMORY.md) — 關鍵決策、踩坑、為什麼選 X 不選 Y
+- [config/versions.json](config/versions.json) — 版本 profile（canonical pointer + 各版參數）
 - [docs/pitch-benchmark.md](docs/pitch-benchmark.md) — 音高 gold 方法論、benchmark、canonical 鏈
 - [docs/display-grid.md](docs/display-grid.md) — 標準化 bar 顯示系統（grid + 時間 warp）
 - [docs/handoff-2026-06-11.md](docs/handoff-2026-06-11.md) — 最新交接快照（未 commit 清單、待辦）
@@ -60,9 +81,9 @@ v8 輪已 commit（c4a2231/e0cceab/9de9b4e），v9/v10 輪改動待 commit —
    - Linux headless：跑前設 `SDL_VIDEODRIVER=dummy`
    - 入口：`main.py` 是 hard-coded paths sample，要包成 CLI
 2. **整個 pipeline 在 Linux GPU 機跑**（RTX 5090, CUDA 13）。Mac MPS path 在 spec 裡規劃過但**從未實測**；如果之後要在本機跑，需要重新驗證 mlx-whisper / demucs-mlx / pyannote MPS 行為。
-3. **ASR 用 faster-whisper + lyrics initial_prompt** 偏置開頭幾個字，避免 quiet 段（如 verse 1 開頭）漏抓 + 幻覺成「ご視聴ありがとう」。**Timing 用 mora→note alignment（`scripts/midi_timing.py` `--mode mora` 預設，2026-05-01 起）**：每個 token 的 reading 展成 mora 序列，per-line bounded greedy-monotone 配對 MIDI notes。kanji 詞（如 `再会` 4 morae）會吃到 4 個 notes 而不是 char-mode 的 2 個，sustain 尾段抓得到。Whisper char timing 只當 proximity hint。`--mode char` 是 legacy fallback。SOFA phoneme-level 升級留 v2（mora→note 視覺上已比 char-level 明顯準）。
+3. **歌詞 timing 用 CTC forced alignment（`TIMING_SOURCE=mms` 預設，2026-06-12 起，Kojek 雙歌耳測驗收）**：已知 mora 序列（tokens.json，override 修讀音）羅馬化後對分離人聲做 forced alignment（`scripts/forced_align_mms.py`，NextFire mms-300m 卡拉OK微調 ckpt，align venv）。**ASR 完全退出 timing 鏈**（幻覺問題從根上消失）；裸 CTC 句尾 peaky 偏早，`line_end_repair`（RMS 尾延伸）是必配後處理。三首 line gold：加權句首 MAE 0.090→**0.070**、句尾 0.098→**0.092**；句尾助詞有自己的聲學 span（不再偷下句 note）、ad-lib 由 CTC blank 吸收（Tu-tu-lu 16s 巨窗→0.7s）。已知殘留：長間奏後 re-entry 偶發數百 ms 偏移（haru 2/12 行）；re-entry guard 實測無效（RMS onset 含氣音前導），留待解碼期約束。`TIMING_SOURCE=classic` 保留舊鏈（ASR→NW→mora→note）可 A/B。
 
-   **Pitch backend ≠ timing backend**：`midi_timing.py` 吃的 MIDI 用 rmvpe（segment 數接近 mora 數），pitch bar 顯示用 cectc。同首歌兩個 MIDI 共存。
+   **舊 timing 鏈（classic，2026-05-01~2026-06-12 canonical）**：faster-whisper + lyrics initial_prompt → NW kana 對齊 → `midi_timing.py --mode mora` per-line bounded greedy-monotone 配對 MIDI notes。Pitch backend ≠ timing backend 的原則仍在：pitch bar 顯示用 GAME union 鏈，與歌詞 timing 互相獨立。
 4. **個人使用，不上傳**。Why: 著作権法 30 条（私的使用）允許自用；上傳會撞原盤権 + Content ID。詳見 spec §2。
 5. **不做連續 f0 曲線**（Vocal Pitch Monitor 風格已否決）。要的是離散音高方塊。
 

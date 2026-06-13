@@ -1,0 +1,44 @@
+{
+  "datasets": [
+    {
+      "dataset_id": "jamendo_mirex/example-song",
+      "song_id": "jamendo-example",
+      "source": "literature: Jamendo/MIREX",
+      "notes": "Convert start-of-word or line annotations to the gold TSV schema before running.",
+      "aligned": "data/literature_alignment/jamendo/example-song/aligned.json",
+      "midi": "data/literature_alignment/jamendo/example-song/melody.mid",
+      "vocals": "data/literature_alignment/jamendo/example-song/vocals.wav",
+      "gold": "data/literature_alignment/jamendo/example-song/gold.tsv"
+    },
+    {
+      "dataset_id": "dali_v2/example-song",
+      "song_id": "dali-example",
+      "source": "literature: DALI v2",
+      "notes": "Use DALI line/word/note annotations; convert to song_id,line_idx,text,gold_start,gold_end.",
+      "aligned": "data/literature_alignment/dali/example-song/aligned.json",
+      "midi": "data/literature_alignment/dali/example-song/melody.mid",
+      "vocals": "data/literature_alignment/dali/example-song/vocals.wav",
+      "gold": "data/literature_alignment/dali/example-song/gold.tsv"
+    },
+    {
+      "dataset_id": "winterreise_rt/example-song",
+      "song_id": "winterreise-example",
+      "source": "literature: winterreise_rt",
+      "notes": "Use the real-time lyrics alignment benchmark after conversion to the sidecar schema.",
+      "aligned": "data/literature_alignment/winterreise_rt/example-song/aligned.json",
+      "midi": "data/literature_alignment/winterreise_rt/example-song/melody.mid",
+      "vocals": "data/literature_alignment/winterreise_rt/example-song/vocals.wav",
+      "gold": "data/literature_alignment/winterreise_rt/example-song/gold.tsv"
+    },
+    {
+      "dataset_id": "gtsinger/japanese-example",
+      "song_id": "gtsinger-jp-example",
+      "source": "literature: GTSinger",
+      "notes": "Use TextGrid phoneme/word boundaries, preferably Japanese subset, aggregated to line gold if needed.",
+      "aligned": "data/literature_alignment/gtsinger/japanese-example/aligned.json",
+      "midi": "data/literature_alignment/gtsinger/japanese-example/melody.mid",
+      "vocals": "data/literature_alignment/gtsinger/japanese-example/vocals.wav",
+      "gold": "data/literature_alignment/gtsinger/japanese-example/gold.tsv"
+    }
+  ]
+}

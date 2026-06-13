@@ -27,6 +27,18 @@ OUT_DIR = Path("outputs")
 # low-register vocals where RMVPE octave-halving bites.
 MELODY_BACKEND = os.environ.get("MELODY_BACKEND", "rmvpe")
 
+# Lyrics TIMING source (canonical mms since 2026-06-12; Kojek ear-accepted on
+# night-dancer + chidori, line gold weighted start MAE 0.090 -> 0.069):
+#   mms     = CTC forced alignment of the known mora sequence against the
+#             separated vocals (NextFire mms-300m karaoke-ja fine-tune).
+#             No ASR in the timing loop — tokens.json + vocals.wav suffice.
+#   classic = Whisper ASR -> kana NW align -> mora->note vs melody MIDI.
+#             Kept switchable for A/B and for mms regressions (haru-hikage
+#             long-interlude re-entry family — see MEMORY.md PoC entry).
+TIMING_SOURCE = os.environ.get("TIMING_SOURCE", "mms")
+if TIMING_SOURCE not in {"mms", "classic"}:
+    raise ValueError(f"TIMING_SOURCE must be mms|classic, got {TIMING_SOURCE!r}")
+
 try:
     VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", "0.30"))
 except ValueError as exc:
@@ -64,6 +76,7 @@ MAIN_PY = str(Path.home() / "venvs" / "karaoke-jp" / "bin" / "python")
 MELODY_PY = str(Path.home() / "venvs" / "karaoke-jp-melody" / "bin" / "python")
 LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
+ALIGN_PY = str(Path.home() / "venvs" / "karaoke-jp-align" / "bin" / "python")
 RMVPE_CKPT = str(Path("third_party") / "SOME" / "pretrained" / "rmvpe" / "model.pt")
 LRC_BLOCK_SIZE = 2  # 2 phrases per lyric block → MID2BAR alternates row 2/3 (上下)
 QUARTERS_PER_PAGE = 10  # bar-display fixed scale: 10 quarter notes per page → narrower pitch bars
@@ -209,32 +222,58 @@ rule align:
         f"--aligned-out {{output.aligned:q}} --lrc-out {{output.lrc:q}}"
 
 
-rule midi_timing:
-    """M3d: Replace Whisper char timing with MIDI note onsets.
+if TIMING_SOURCE == "mms":
+    rule mms_align:
+        """M3d (canonical): CTC forced alignment as the lyrics timing source.
 
-    SOME's melody.mid captures the actual note onset of every sung mora,
-    giving much tighter timing than Whisper word timestamps.  The result is
-    written to aligned_midi.raw.json; line_end_repair then produces the
-    aligned_midi.json that downstream rules (export_lrc, midi_markers)
-    consume, so the final karaoke.lrc has syllable-accurate wipe.
-    Lines with no notes in their Whisper window fall back to Whisper timing.
+        The known mora sequence (tokens.json, reading-corrected via
+        overrides/) is romanized and force-aligned against the separated
+        vocals — timing comes from frame-level acoustic posteriors under the
+        lyric constraint (survey §3.5). Line-final particles own their actual
+        phones, ad-libs are absorbed by CTC blank, onsets sit at consonant
+        starts (the event the Audacity line gold marks). Raw CTC offsets are
+        peaky-early by design; line_end_repair below recovers them (FZZ-style
+        post-processing). Kojek ear-accepted 2026-06-12 (night-dancer +
+        chidori; "舊的小瑕疵也變平滑").
+        """
+        input:
+            tokens=str(OUT_DIR / "{song}" / "tokens.json"),
+            vocals=str(OUT_DIR / "{song}" / "vocals.wav"),
+        output:
+            aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.raw.json"),
+        resources:
+            gpu=1,
+        shell:
+            f"{ALIGN_PY} scripts/forced_align_mms.py "
+            f"--vocals {{input.vocals:q}} --tokens {{input.tokens:q}} "
+            f"--out {{output.aligned_midi:q}}"
+else:
+    rule midi_timing:
+        """M3d (classic): Replace Whisper char timing with MIDI note onsets.
 
-    The first-mora gate + absorb-trailing flags are the single cross-song
-    boundary config validated on the chidori/haru-hikage/tuki-zero line gold
-    (start MAE 0.11-0.18s) and ear-checked on byoushin (2026-06-11, Kojek:
-    line starts/ends must be automatic — see docs/handoff-2026-06-11.md #4).
-    """
-    input:
-        aligned=str(OUT_DIR / "{song}" / "aligned.json"),
-        midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
-    output:
-        aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.raw.json"),
-    shell:
-        f"{MAIN_PY} scripts/midi_timing.py "
-        f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} "
-        f"--out {{output.aligned_midi:q}} "
-        f"--first-mora-min-delay 0.05 --first-mora-gate-prev-gap 0.75 "
-        f"--first-mora-gate-lead-tolerance 0.08 --absorb-trailing-notes"
+        SOME's melody.mid captures the actual note onset of every sung mora,
+        giving much tighter timing than Whisper word timestamps.  The result is
+        written to aligned_midi.raw.json; line_end_repair then produces the
+        aligned_midi.json that downstream rules (export_lrc, midi_markers)
+        consume, so the final karaoke.lrc has syllable-accurate wipe.
+        Lines with no notes in their Whisper window fall back to Whisper timing.
+
+        The first-mora gate + absorb-trailing flags are the single cross-song
+        boundary config validated on the chidori/haru-hikage/tuki-zero line gold
+        (start MAE 0.11-0.18s) and ear-checked on byoushin (2026-06-11, Kojek:
+        line starts/ends must be automatic — see docs/handoff-2026-06-11.md #4).
+        """
+        input:
+            aligned=str(OUT_DIR / "{song}" / "aligned.json"),
+            midi=str(OUT_DIR / "{song}" / "melody_quantized.mid"),
+        output:
+            aligned_midi=str(OUT_DIR / "{song}" / "aligned_midi.raw.json"),
+        shell:
+            f"{MAIN_PY} scripts/midi_timing.py "
+            f"--midi {{input.midi:q}} --aligned {{input.aligned:q}} "
+            f"--out {{output.aligned_midi:q}} "
+            f"--first-mora-min-delay 0.05 --first-mora-gate-prev-gap 0.75 "
+            f"--first-mora-gate-lead-tolerance 0.08 --absorb-trailing-notes"
 
 
 rule line_end_repair:

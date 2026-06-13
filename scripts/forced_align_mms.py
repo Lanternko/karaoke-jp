@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from midi_timing import (  # noqa: E402
+    _is_sung_char,
     _retime_lines_after_char_update,
     _retime_unsung_chars,
     _writeback_char_timings,
@@ -157,7 +158,7 @@ def records_to_words(records: list[dict]) -> tuple[list[str], list[list[int]]]:
             owner_set = owners if len(owners) == 1 else (
                 owners[:-1] if ci < len(rom) - 1 else owners[-1:])
             for o in owner_set:
-                letters_per_record[o].append(pos)
+                letters_per_record[o].append(pos + ci)
         pos += len(rom)
         words.append(rom)
         k += 1
@@ -187,24 +188,171 @@ def _chunk_boundaries(wave, sr: int, chunk_s: float) -> list[tuple[int, int]]:
     return list(zip(bounds[:-1], bounds[1:]))
 
 
+def skeleton_from_tokens(tokens_path: str | Path) -> list[dict]:
+    """Build an aligned-schema sidecar directly from tokens.json.
+
+    Forced alignment only needs the mora sequence, so the timing chain does
+    not need ASR at all — no Whisper, no hallucinations. All timings start
+    at zero and are filled by the aligner.
+    """
+    lines = json.loads(Path(tokens_path).read_text(encoding="utf-8"))
+    out: list[dict] = []
+    for line in lines:
+        tokens = []
+        for tok in line.get("tokens", []):
+            chars = [{"char": ch, "start": 0.0, "end": 0.0} for ch in tok["surface"]]
+            tokens.append({**{k: tok.get(k) for k in
+                              ("surface", "reading", "kana_only", "pos", "is_punct")},
+                           "start": 0.0, "end": 0.0, "chars": chars})
+        out.append({"text": line["text"], "start": 0.0, "end": 0.0, "tokens": tokens})
+    return out
+
+
+def f0_reentry_guard(lines: list[dict], f0_npz_path: str | Path, *,
+                     min_gap: float = 4.0, search: float = 1.2,
+                     min_fix: float = 0.2, voiced_run: float = 0.08,
+                     quiet_before: float = 1.0, quiet_max_frac: float = 0.2) -> int:
+    """RESEARCH DIAGNOSTIC — not for production (Kojek ear QA 2026-06-12).
+
+    Snaps post-interlude line starts to the RMVPE voicing onset. On the
+    haru line-gold this improves the metric (start MAE 0.151->0.100, the
+    line-29 snap lands exactly on gold 176.62) — but the EAR rejected it:
+    176.62 sounds like exhale/pre-phonation, not the lyric entry; MMS's own
+    177.23 is closer to the karaoke visual entry point. The line gold there
+    likely marks breath onset, which is NOT the same event as the visual
+    wipe-in. Verdict: F0 voicing is soft evidence only, never a start
+    oracle (its END points fared better — offset/tail repair is the more
+    promising use); the successor design is a line-pair boundary solver.
+
+    Three do-no-harm gates (kept for diagnostic use):
+      * only lines whose gap from the previous line exceeds ``min_gap``;
+      * the ``quiet_before`` seconds before the candidate onset must be
+        mostly unvoiced (< ``quiet_max_frac``) — a genuine re-entry, not the
+        previous line's sustained tail (which is what made the RMS variant
+        of this guard snap line 31 the wrong way);
+      * moves go EARLIER only. CTC aligns phonetic evidence including
+        unvoiced consonants: voicing later than CTC's start is consistent
+        with a devoiced onset (chidori line 18 「すすき」, す devoiced —
+        F0 fires 0.15s after the true syllable start), but sustained voicing
+        BEFORE CTC's start means CTC missed the entry (haru line 29).
+    """
+    import numpy as np
+
+    data = np.load(f0_npz_path)
+    f0 = data["f0"]
+    hop = float(data["hop_seconds"][0])
+    voiced = f0 > 0
+    run_need = max(1, int(voiced_run / hop))
+
+    def onset_in(lo: float, hi: float) -> float | None:
+        a, b = max(0, int(lo / hop)), min(len(voiced), int(hi / hop))
+        run = 0
+        for i in range(a, b):
+            run = run + 1 if voiced[i] else 0
+            if run >= run_need:
+                return (i - run_need + 1) * hop
+        return None
+
+    def quiet_enough(t: float) -> bool:
+        a = max(0, int((t - quiet_before) / hop))
+        b = max(a + 1, int((t - 0.05) / hop))
+        return float(voiced[a:b].mean()) < quiet_max_frac
+
+    moved = 0
+    prev_end = 0.0
+    for line in lines:
+        chars = [c for t in line.get("tokens", []) for c in t.get("chars", [])
+                 if _is_sung_char(c["char"])]
+        if not chars:
+            continue
+        start = line["start"]
+        if start - prev_end > min_gap:
+            cand = onset_in(start - search, start + search)
+            if (cand is not None and start - cand > min_fix
+                    and quiet_enough(cand)):
+                first = chars[0]
+                first["start"] = round(min(cand, first["end"] - 0.012), 3)
+                line["start"] = first["start"]
+                for tok in line["tokens"]:
+                    if tok.get("chars"):
+                        tok["start"] = tok["chars"][0]["start"]
+                        break
+                moved += 1
+        prev_end = line["end"]
+    return moved
+
+
+def apply_reentry_guard(lines: list[dict], segments_path: str | Path, *,
+                        min_gap: float = 4.0, search: float = 1.2,
+                        min_fix: float = 0.25) -> int:
+    """Snap post-interlude line starts to the nearest RMS voiced onset.
+
+    The one failure mode CTC alignment showed on the gold set: re-entry after
+    a long instrumental can land a few hundred ms off (haru-hikage lines
+    29/31). The RMS voiced-segment onset is independent evidence of where
+    the voice actually comes back, so lines that follow a > ``min_gap``
+    silence get their first sung char snapped when the deviation exceeds
+    ``min_fix``. Interior lines are never touched.
+    """
+    data = json.loads(Path(segments_path).read_text(encoding="utf-8"))
+    pad = float(data.get("params", {}).get("pad", 0.0)) if isinstance(data, dict) else 0.0
+    segments = data["segments"] if isinstance(data, dict) else data
+    onsets = sorted(float(s["start"]) + pad for s in segments)
+
+    moved = 0
+    prev_end = 0.0
+    for line in lines:
+        chars = [c for t in line.get("tokens", []) for c in t.get("chars", [])
+                 if c["end"] > c["start"] or c["start"] > 0]
+        if not chars:
+            continue
+        start = line["start"]
+        if start - prev_end > min_gap:
+            best = min(onsets, key=lambda o: abs(o - start), default=None)
+            if best is not None and min_fix < abs(best - start) <= search:
+                first = chars[0]
+                first["start"] = round(min(best, first["end"] - 0.012), 3)
+                line["start"] = first["start"]
+                for tok in line["tokens"]:
+                    if tok.get("chars"):
+                        tok["start"] = tok["chars"][0]["start"]
+                        break
+                moved += 1
+        prev_end = line["end"]
+    return moved
+
+
 @click.command()
 @click.option("--vocals", type=click.Path(exists=True, dir_okay=False), required=True)
-@click.option("--aligned", "aligned_path", type=click.Path(exists=True, dir_okay=False), required=True,
+@click.option("--aligned", "aligned_path", type=click.Path(exists=True, dir_okay=False), default=None,
               help="Existing sidecar (schema + reading-corrected tokens); all timings are replaced.")
+@click.option("--tokens", "tokens_path", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="tokens.json — build the sidecar skeleton directly (no ASR in the loop).")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
 @click.option("--model", "model_id", default="NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn",
               show_default=True)
 @click.option("--device", default="cuda", show_default=True)
 @click.option("--chunk-seconds", default=110.0, show_default=True,
               help="Emission chunking bound (memory); cuts snap to the quietest nearby 20ms.")
-def main(vocals: str, aligned_path: str, out_path: str, model_id: str,
-         device: str, chunk_seconds: float) -> None:
+@click.option("--rms-segments", "rms_segments_path", type=click.Path(exists=True, dir_okay=False),
+              default=None, help="rms_segments.json; RMS re-entry guard (legacy — "
+              "fires ~0.5s early on breath/bleed; prefer --f0).")
+@click.option("--f0", "f0_npz_path", type=click.Path(exists=True, dir_okay=False),
+              default=None, help="rmvpe_f0.npz; F0-voicing re-entry guard for "
+              "post-interlude lines (haru line-29 family).")
+def main(vocals: str, aligned_path: str | None, tokens_path: str | None,
+         out_path: str, model_id: str, device: str, chunk_seconds: float,
+         rms_segments_path: str | None, f0_npz_path: str | None) -> None:
     import torch
     import torchaudio
     from transformers import AutoProcessor, Wav2Vec2ForCTC
 
-    lines = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
-    lines = copy.deepcopy(lines)
+    if (aligned_path is None) == (tokens_path is None):
+        raise click.UsageError("Pass exactly one of --aligned / --tokens.")
+    if tokens_path is not None:
+        lines = skeleton_from_tokens(tokens_path)
+    else:
+        lines = copy.deepcopy(json.loads(Path(aligned_path).read_text(encoding="utf-8")))
 
     per_line_records: list[list[dict]] = [expand_line_to_morae(ln) for ln in lines]
     all_records: list[dict] = [r for recs in per_line_records for r in recs]
@@ -303,9 +451,16 @@ def main(vocals: str, aligned_path: str, out_path: str, model_id: str,
         updated += 1
     _retime_lines_after_char_update(lines)
 
+    guarded = 0
+    if f0_npz_path:
+        guarded = f0_reentry_guard(lines, f0_npz_path)
+    elif rms_segments_path:
+        guarded = apply_reentry_guard(lines, rms_segments_path)
+
     Path(out_path).write_text(json.dumps(lines, ensure_ascii=False, indent=1), encoding="utf-8")
     click.echo(f"[mms-align] {updated}/{len(lines)} lines retimed, "
                f"{len(words)} words / {len(targets)} targets, "
+               f"reentry-guard moved {guarded}, "
                f"emission {emission.shape[1]} frames @ {ratio*1000:.1f}ms -> {out_path}")
 
 
