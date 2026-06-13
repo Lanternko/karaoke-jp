@@ -73,6 +73,25 @@ fallback peak-PCP → melody**,所以非硬依賴）。`essentia.log.warningActi
 EDM 的 edma/bgate）留待在 pop gold 上做**——不在這份 EDM 集上選（會選出 EDM-best 誤導 pop）。
 已知:Essentia 在**短片段**會選關係小調（75s chidori 片段 → Cm,全曲 → E♭),render 餵全曲故顯示 E♭。
 
+**(E) 外部 gold 驗證 + profile sweep（2026-06-13）**：web agent 查 11 首標準調性（chord/譜 源 > Tunebat 算法源）。
+6 首**高信心 gold**（chord/sheet 推導:chidori E♭、night-dancer Gm、tuki-zero G、eric-chou A、
+tuki-saitei Gm、stay D♭）—— **外部 chord 源獨立確認 chidori=E♭**（D 把位 + Capo 1 → 響 E♭),不靠 repo gold。
+Profile sweep（餵 source mix）：
+
+| profile | 高信心(6) | 全部(10) |
+|---|---|---|
+| **default（canonical 現用）** | **1.000** | **0.930** |
+| bgate | 1.000 | 0.930 |
+| krumhansl | 0.917 | 0.810 |
+| shaath | 0.883 | 0.790 |
+| temperley / diatonic | 0.767 | 0.720（small key → 相對大調） |
+
+→ **canonical 的 default profile 已是最佳（高信心 gold 全中），不需改**。全部(10) 的 0.07 缺口在
+medium 信心的 Tunebat 算法 gold（可能 gold 本身相對翻),非 essentia 之過。
+**重要澄清**：先前「essentia 翻相對大調」的疑慮（night-dancer→B♭ 等）是**餵錯輸入**（peak-PCP 或 vocals stem）的產物;
+餵 full mix 的 essentia default 對 6 首高信心 gold **全中** —— 再次坐實「餵 mix 不餵人聲」。
+（sweep 腳本 `tmp/keytest/profile_sweep.py`,scratch。）
+
 ---
 
 ## 1. Drop-in 開源工具比較

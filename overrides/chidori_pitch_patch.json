@@ -11,5 +11,21 @@
     "melisma_split": [64.99, 66.10],
     "into": [[64.99, 65.59, 67], [65.59, 65.85, 65], [65.85, 66.10, 62]],
     "note": "鳥が私を呼んでいる の 終わり『る』 — GAME merged the long-vowel melisma into one sustained note (union has held p65 + trailing p63). RMVPE F0 over 64.99-66.05 is an arch 65->67(peak 65.2-65.6)->65->63->62, heard as a descending melisma. Replace the merged note(s) with 3 descending bars G4->F4->D4 (67/65/62) at the F0 transition points. Pitches are F0-derived; NEEDS KOJEK EAR-CONFIRM (alt: 67->64->62, or 65->63->61)."
+  },
+  {
+    "at": 36.42,
+    "from": 47,
+    "pitch": 63,
+    "start": 36.32,
+    "end": 36.56,
+    "note": "verse1 scoop-onset (しゃくり) into D#4 — NOT an octave error. RMVPE F0 momentarily dips to ~B2/E3 at 36.31-36.36 (glide-bottom) then jumps to a sustained D#4 (36.56-37.06). A discrete B2 bar flicks a spurious low note AND inflates the HUD range to B2..D#5 (28 st; true vocal floor ~A#3). Relabel B2->D#4 so it folds into its target. +88.0s sister at 124.3 (verse2). f0-derived, D#4 strongly supported by the sustained note right after; ear-confirm at next render."
+  },
+  {
+    "at": 124.42,
+    "from": 48,
+    "pitch": 63,
+    "start": 124.32,
+    "end": 124.55,
+    "note": "verse2 +88.0s sister of the 36.3 scoop-onset (chidori's known +88s phrase pair) — same scoop-into-D#4 shape in the F0 (C3 glide-bottom then sustained D#4 124.55-125.07). Same fix C3->D#4 (63)."
   }
 ]

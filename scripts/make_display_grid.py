@@ -131,6 +131,10 @@ def apply_pitch_patch(
     applied = 0
     missed: list[float] = []
     for patch in patches:
+        if "at" not in patch:
+            # e.g. {"melisma_split": ...} -- a portrait-grid-only entry in the
+            # shared per-song override; the horizontal grid ignores it.
+            continue
         t = float(patch["at"])
         pitch = int(patch["pitch"])
         hit = False
