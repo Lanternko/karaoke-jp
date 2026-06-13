@@ -88,6 +88,22 @@ Profile sweep（餵 source mix）：
 
 → **canonical 的 default profile 已是最佳（高信心 gold 全中），不需改**。全部(10) 的 0.07 缺口在
 medium 信心的 Tunebat 算法 gold（可能 gold 本身相對翻),非 essentia 之過。
+
+**(F) madmom SOTA 對照（2026-06-13,終於跑成）**：madmom 0.16.1 在新 Python 三連雷
+（`numpy.distutils` py3.12 沒、`collections.MutableSequence` py3.10 移除、`np.float` numpy1.24 移除）
+→ 唯一可行組合 **uv 裝 py3.9 + numpy 1.23.5 + scipy 1.10 + cython<3**（`~/venvs/madmom`,**py3.9
+與 render venv 的 py3.12 不相容,只能獨立 venv / subprocess**）。三方對照:
+
+| 工具 | GiantSteps(EDM,n101) | pop 高信心(6) | pop 全部(10) | 速度 |
+|---|---|---|---|---|
+| peak-PCP | 0.546 / 40.6% | — | — | 0.079s |
+| **Essentia（現用）** | 0.717 / 64.4% | **1.000** | **0.930** | **0.070s** |
+| madmom CNN（SOTA） | **0.766 / 70.3%** | **1.000** | 0.860 | 1.78s（**慢 25×**） |
+
+→ **madmom 確實是 SOTA**（GiantSteps EDM 上 0.766 > essentia 0.717,坐實論文宣稱),但
+**在我們的 pop 高信心 gold 上與 essentia 並列 perfect 1.000**;全部(10) 反而輸（byoushin/kuzurinen
+翻相對調,但那是 Tunebat 算法 gold 不一定對）。**結論:不採用 madmom** —— pop 上跟 essentia 打平、
+慢 25–50×、且 py3.9 環境與 render venv 不相容（要 subprocess 增複雜度）、安裝脆弱。**Essentia 維持 canonical。**
 **重要澄清**：先前「essentia 翻相對大調」的疑慮（night-dancer→B♭ 等）是**餵錯輸入**（peak-PCP 或 vocals stem）的產物;
 餵 full mix 的 essentia default 對 6 首高信心 gold **全中** —— 再次坐實「餵 mix 不餵人聲」。
 （sweep 腳本 `tmp/keytest/profile_sweep.py`,scratch。）
