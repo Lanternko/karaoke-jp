@@ -58,8 +58,8 @@ third_party/*
 # Note: tmp/aina-kakumei/ holds crops of copyrighted sheet music — must stay out of git.
 tmp/
 
-# Gold pitch references are irreplaceable — exempt from the global *.mid ignore
-!gold/**/*.mid
+# gold/ is a private submodule (copyright-sensitive melody transcriptions);
+# its contents live in the private karaoke-jp-gold repo, not here.
 
 # SOFA checkpoints (2.2GB, re-downloadable: github.com/colstone/SOFA_Models JPN-V0.0.2b)
 benchmarks/sofa_models/

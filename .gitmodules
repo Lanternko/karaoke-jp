@@ -1,0 +1,3 @@
+[submodule "gold"]
+	path = gold
+	url = https://github.com/Lanternko/karaoke-jp-gold.git
