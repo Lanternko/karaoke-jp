@@ -312,30 +312,68 @@ _KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3
 _FLAT_MAJOR_PCS = {5, 10, 3, 8, 1}
 
 
+def _read_wav_mono(path: str):
+    """Dependency-free WAV reader -> (mono float32 in [-1,1], sample_rate).
+
+    The render venv has no soundfile/scipy and stdlib ``wave`` rejects float
+    WAVs (raises on format 3). Our pipeline feeds PCM16 (the karaoke mix) AND
+    float32 (separated stems), so parse the RIFF chunks directly and handle
+    PCM 16/32-bit + IEEE float 32/64-bit. Returns None for anything else
+    (24-bit, WAVE_FORMAT_EXTENSIBLE, compressed) so callers fall back. NOTE:
+    feeding a float32 stem to the old PCM16-only reader silently fell back to
+    melody-only key detection (the biased path) -- this reader fixes that.
+    """
+    import struct
+
+    import numpy as _np
+
+    try:
+        raw = Path(path).read_bytes()
+        if raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
+            return None
+        fmt = data = None
+        i = 12
+        while i + 8 <= len(raw):
+            cid, sz = raw[i:i + 4], struct.unpack_from("<I", raw, i + 4)[0]
+            if cid == b"fmt ":
+                fmt = struct.unpack_from("<HHIIHH", raw, i + 8)
+            elif cid == b"data":
+                data = raw[i + 8:i + 8 + sz]
+            i += 8 + sz + (sz & 1)  # RIFF chunks are word-aligned
+        if fmt is None or data is None:
+            return None
+        afmt, ch, rate, bits = fmt[0], fmt[1], fmt[2], fmt[5]
+        if afmt == 1 and bits == 16:
+            x = _np.frombuffer(data, dtype="<i2").astype(_np.float32) / 32768.0
+        elif afmt == 1 and bits == 32:
+            x = _np.frombuffer(data, dtype="<i4").astype(_np.float32) / 2147483648.0
+        elif afmt == 3 and bits == 32:
+            x = _np.frombuffer(data, dtype="<f4").astype(_np.float32)
+        elif afmt == 3 and bits == 64:
+            x = _np.frombuffer(data, dtype="<f8").astype(_np.float32)
+        else:
+            return None
+        if ch > 1:
+            x = x[:len(x) - (len(x) % ch)].reshape(-1, ch).mean(1)
+        return x, rate
+    except Exception:
+        return None
+
+
 def _audio_pcp(path: str):
-    """Peak-based pitch-class profile of a PCM16 WAV (None if unreadable).
+    """Peak-based pitch-class profile of a WAV (None if unreadable).
 
     Per frame only local spectral maxima vote (top-10, 80-2000 Hz), which keeps
     percussion/overtone smear out of the chroma -- a naive all-bin STFT chroma
     of a full mix ranks garbage keys (C major on chidori). A circular-mean
     tuning estimate is subtracted before pitch-class rounding.
     """
-    import wave
-
     import numpy as _np
 
-    try:
-        wf = wave.open(path, "rb")
-        nch, sw, fr = wf.getnchannels(), wf.getsampwidth(), wf.getframerate()
-        if sw != 2:
-            return None
-        x = _np.frombuffer(wf.readframes(wf.getnframes()), dtype=_np.int16)
-    except Exception:
+    rd = _read_wav_mono(path)
+    if rd is None:
         return None
-    x = x.astype(_np.float32)
-    if nch == 2:
-        x = x.reshape(-1, 2).mean(1)
-    x /= 32768.0
+    x, fr = rd
     N, hop = 8192, 4096
     win = _np.hanning(N)
     freqs = _np.fft.rfftfreq(N, 1 / fr)
@@ -377,6 +415,11 @@ def _detect_key(notes, audio_path: str | None = None) -> dict:
         w = _np.zeros(12)
         for n in notes:
             w[n["pitch"] % 12] += n["end"] - n["start"]
+    if not _np.any(w) or _np.std(w) == 0:
+        # No usable evidence (silent/unreadable audio AND no notes): a flat
+        # profile makes every corrcoef NaN and argmax picks C by accident.
+        return {"name": "?", "use_flats": False, "corr": 0.0,
+                "source": "none", "top": []}
     scored = []
     for mode, profile in (("major", _KS_MAJOR), ("minor", _KS_MINOR)):
         prof = _np.asarray(profile, float)
