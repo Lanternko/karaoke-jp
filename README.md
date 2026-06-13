@@ -13,6 +13,11 @@
 
 <img src="figures/v14_main.png" width="100%" alt="canonical v14 純底畫面：扁平音高方塊（黃=已唱、白=未到）+ songinfo HUD（♪音符數、音高傾向箭頭、音域/調性 gauge）+ 逐字歌詞 + 振假名" />
 
+**▶ 動態 demo（靜音）**
+
+<img src="figures/demo_v14.gif" width="100%" alt="v14 動態 demo：音高方塊捲動 + 逐字歌詞 wipe（靜音）" />
+<p align="center"><sub>分離後的伴奏屬原盤衍生，demo 故不附音訊；完整有聲影片僅限個人練唱自用。</sub></p>
+
 <table>
   <tr>
     <td width="33%"><img src="figures/v14_wipe.png" alt="逐字 wipe：現在音符高亮，黃色已唱、白色未到" /></td>
@@ -25,6 +30,17 @@
     <td align="center"><sub>雙行歌詞 + 音域/調性 gauge</sub></td>
   </tr>
 </table>
+
+### 直式 9:16（Shorts / Reels 版面）
+
+<table>
+  <tr>
+    <td width="50%"><img src="figures/v14_portrait_a.png" alt="直式 9:16：雙行交替 pitch bar（橘=當前句、灰=另一句）+ 逐字 wipe + 振假名" /></td>
+    <td width="50%"><img src="figures/v14_portrait_b.png" alt="直式 9:16：雙行 pitch bar + 雙行歌詞 + 振假名" /></td>
+  </tr>
+</table>
+
+<p align="center"><sub>直式同為 canonical v14（<code>/render-portrait</code>）；上方留白可疊原 MV／靜態圖，此處示意純底。</sub></p>
 
 <img src="figures/tuki-zero_melody.png" width="100%" alt="melody.mid 音符散佈圖：626 顆音符、音高 49–79" />
 <p align="center"><sub>M2 抽出的 melody.mid（626 顆音符、音高 49–79）</sub></p>
