@@ -19,7 +19,7 @@
 **音高里程碑（2026-06-10）**：樂譜層音高推論整輪完成 — chidori 全驗證 gold（sheet+人耳）、
 雙歌 benchmark、canonical 雙鏈（classic scorefix + GAME union）。chidori note-level
 52.6%→**72.8%**。完整方法論與計分板見 [docs/pitch-benchmark.md](docs/pitch-benchmark.md)；
-不可再生 gold 已存 tracked 的 `gold/`。
+不可再生 gold 存在私有 submodule `gold/`（`Lanternko/karaoke-jp-gold`，private；版權旋律轉譜不公開，dev 機 `git submodule update --init` 取得）。
 **Canonical v14（2026-06-12）**：GAME seg0.3 + MMS CTC timing + v11 display grid
 （constant-speed slots + breath gaps + fragment absorb + ensure pitch patch）+
 flat bar skin。雙歌耳測驗收（chidori + byoushin），公開 benchmark 全跑完

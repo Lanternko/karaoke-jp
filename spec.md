@@ -187,7 +187,7 @@ karaoke-jp/
 ├── songs/                    # 輸入（user-curated）
 │   └── <song-id>/
 │       ├── source.wav        # gitignored
-│       ├── lyrics.txt        # tracked
+│       ├── lyrics.txt        # 本地輸入（版權故未追蹤）
 │       ├── source.md         # tracked（artist / URL / gikun notes）
 │       └── background.{mp4,png}  # optional, gitignored
 ├── outputs/                  # all gitignored

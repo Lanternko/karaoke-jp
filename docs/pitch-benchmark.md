@@ -3,7 +3,8 @@
 > 2026-06-10 整輪「樂譜層音高推論」工作的耐久文檔。
 > 細節決策與踩坑在 [MEMORY.md](../MEMORY.md)；本檔是可重現的全貌。
 > ⚠ 全域 `*.mid` gitignore 讓所有工作區 MIDI（含 tmp/ 的 gold）從不進 git —
-> 不可再生資產已複本到 **[`gold/`](../gold/)**（.gitignore 已加 `!gold/**/*.mid` 例外）。
+> 不可再生資產存在 **`gold/`**，現為**私有 submodule**（`Lanternko/karaoke-jp-gold`，private；
+> 含版權歌曲旋律轉譜故不公開）。dev 機用 `git submodule update --init` 取得。
 
 ## TL;DR 計分板（2026-06-10）
 
@@ -85,7 +86,7 @@ latent-note Viterbi v1（−5pp）、pYIN 主軌（chidori −12pp）。
 
 | 資產 | 位置 | git |
 |---|---|---|
-| **Gold（不可再生）** | [`gold/chidori/`](../gold/chidori/)、[`gold/byoushinwo-kamu/`](../gold/byoushinwo-kamu/) | ✅ tracked |
+| **Gold（不可再生）** | `gold/chidori/`、`gold/byoushinwo-kamu/` | 🔒 私有 submodule（karaoke-jp-gold） |
 | 工作區 gold/實驗品 | `tmp/reference/{chidori,byoushinwo-kamu}/` | ⚠ untracked；其中 *.mid 被全域 ignore |
 | 研究日誌 | `tmp/chidori_auto_research_report.md` | ⚠ untracked |
 | 鏈 driver | `scripts/run_score_chain.py`、`run_game_chain.py`、`melody_union.py` 等 | tracked |

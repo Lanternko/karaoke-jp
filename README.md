@@ -82,6 +82,8 @@ cd karaoke-jp
 bash scripts/setup.sh
 ```
 
+> `gold/` 是私有 submodule（人耳/樂譜驗證 pitch references，版權故不公開）。公開使用者**不需要**它（只有 eval/benchmark 用得到）；有存取權者跑 `git submodule update --init`。
+
 `setup.sh` 約 10 分鐘（看 checkpoint 下載速度），idempotent —— 失敗重跑只補做未完成步驟。會自動：
 
 1. 建 5 個 venv（套件版本互衝故刻意分開，詳見 [CLAUDE.md](CLAUDE.md)「環境隔離」）
@@ -130,12 +132,12 @@ karaoke-jp/
 ├── Snakefile         # pipeline DAG：separate → melody → align → midi_timing → {lrc, markers} → mix → render
 ├── config/           # mid2bar_settings.json + versions.json（canonical 版本 pointer）
 ├── benchmarks/       # MIR-ST500 / Kiritan / phone-boundary 評估與結果
-├── gold/             # 不可再生的人耳/樂譜驗證 pitch references（tracked）
+├── gold/             # 人耳/樂譜驗證 pitch references（私有 submodule，版權故不公開）
 ├── data/             # alignment gold tsv
-├── songs/<id>/       # lyrics.txt, source.md, background.*（音檔/影片 gitignored）
+├── songs/<id>/       # source.md tracked；lyrics.txt 本地未追蹤（版權）；音檔/影片 gitignored
 ├── outputs/<id>/     # 中間檔 + karaoke.mp4（gitignored）
 ├── overrides/        # 每首歌的 ruby override JSON（gikun 用）
-├── figures/          # README 截圖
+├── figures/          # README 截圖（純底版；疊版權背景的不公開）
 ├── third_party/      # 外部 repo（gitignored，setup script clone）
 └── spec.md  CLAUDE.md  MEMORY.md  docs/  pyproject.toml
 ```
