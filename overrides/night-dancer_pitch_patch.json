@@ -5,5 +5,8 @@
   {"at": 93.44, "pitch": 70, "start": 93.33, "end": 93.63, "note": "Tu-tu-lu hook 3/6 (A4)"},
   {"at": 94.01, "pitch": 70, "start": 93.90, "end": 94.20, "note": "Tu-tu-lu hook 4/6 (A4)"},
   {"at": 94.46, "pitch": 70, "start": 94.36, "end": 94.62, "note": "Tu-tu-lu hook 5/6 (A4)"},
-  {"at": 94.82, "pitch": 70, "start": 94.69, "end": 94.99, "note": "Tu-tu-lu hook 6/6 (A4)"}
+  {"at": 94.82, "pitch": 70, "start": 94.69, "end": 94.99, "note": "Tu-tu-lu hook 6/6 (A4)"},
+  {"lyric_retime": [89.0, 106.0], "to": [92.19, 94.99],
+   "note": "The 'Tu-tu-lu-tu-lu' lyric line was stretched 90.11-105.83 (15.7s): the CTC matched its trailing tu/lu/tu/lu syllables to interlude percussion at 99/101/104/105s. The real scat is the ~2.7s hook (92.19-94.99) — the SAME line at 154.6-157.1s aligns correctly to 2.47s, proving the alignment can be tight. Compress this occurrence onto the hook so the lyric wipes with the bars. Display-only; aligned_midi.json untouched."}
 ]
+

@@ -336,6 +336,37 @@ def _extract_line_chars(line: dict) -> list[dict]:
     return chars
 
 
+def apply_lyric_retime(lines: list[dict], patches: list[dict]) -> int:
+    """Compress a mis-aligned lyric line onto its true span.
+
+    When a section has sung phrases with no matching lyric, the CTC stretches
+    the one lyric line that IS there across the whole region (night-dancer's
+    'Tu-tu-lu-tu-lu' smeared 90->105.8s, its trailing syllables matched to
+    interlude percussion). An override {"lyric_retime":[lo,hi],"to":[t0,t1]}
+    finds the line whose start falls in [lo,hi] and linearly remaps its char
+    times onto [t0,t1], so the lyric wipes tightly on the real phrase (the
+    same line aligns correctly elsewhere — here just the one occurrence is
+    bad). Display-layer; the aligned_midi.json source is untouched.
+    """
+    rt = [p for p in patches if "lyric_retime" in p]
+    applied = 0
+    for sp in rt:
+        lo, hi = (float(x) for x in sp["lyric_retime"])
+        t0, t1 = (float(x) for x in sp["to"])
+        for ln in lines:
+            if not (lo <= ln["time_start"] <= hi):
+                continue
+            cs = ln["chars"]
+            s0, s1 = cs[0]["real_start"], cs[-1]["real_end"]
+            span = max(s1 - s0, 1e-6)
+            for c in cs:
+                c["real_start"] = t0 + (c["real_start"] - s0) / span * (t1 - t0)
+                c["real_end"] = t0 + (c["real_end"] - s0) / span * (t1 - t0)
+            ln["time_start"], ln["time_end"] = cs[0]["real_start"], cs[-1]["real_end"]
+            applied += 1
+    return applied
+
+
 def build_lyric_lines(aligned: list[dict]) -> list[dict]:
     lines: list[dict] = []
     for line in aligned:
@@ -494,6 +525,7 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
         squeeze_max=squeeze_units * quarter, quarter=quarter)
 
     lyric_lines = build_lyric_lines(aligned)
+    retimed = apply_lyric_retime(lyric_lines, patches)
 
     compute_line_timing(bar_lines, lead_max=lead_max, linger=linger)
     compute_line_timing(lyric_lines, lead_max=lead_max, linger=linger)
@@ -517,6 +549,7 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
                f"lyric_lines={len(lyric_lines)} "
                f"dropped={dropped} wiggles={wiggles} patched={patched} "
                f"mora_split={mora_split} melisma={melisma} ghosts={ghosts} "
+               f"lyric_retime={retimed} "
                f"pitch=[{pitch_min},{pitch_max}] quarter={quarter:.3f}s")
 
 
