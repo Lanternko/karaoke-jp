@@ -6,5 +6,10 @@
     "start": 52.36,
     "end": 52.54,
     "note": "verse1 たぶん の た — Kojek ear + gold = Eb3. ENSURE semantics: the June-10 extract mislabeled it Eb4 (relabel applies); the seg0.3 extract drops the note entirely (insert applies). Mirror phrase at 140.31 (verse2) has it correct in both, which is the evidence."
+  },
+  {
+    "melisma_split": [64.99, 66.10],
+    "into": [[64.99, 65.59, 67], [65.59, 65.85, 65], [65.85, 66.10, 62]],
+    "note": "鳥が私を呼んでいる の 終わり『る』 — GAME merged the long-vowel melisma into one sustained note (union has held p65 + trailing p63). RMVPE F0 over 64.99-66.05 is an arch 65->67(peak 65.2-65.6)->65->63->62, heard as a descending melisma. Replace the merged note(s) with 3 descending bars G4->F4->D4 (67/65/62) at the F0 transition points. Pitches are F0-derived; NEEDS KOJEK EAR-CONFIRM (alt: 67->64->62, or 65->63->61)."
   }
 ]

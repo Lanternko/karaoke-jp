@@ -64,23 +64,38 @@ def drop_isolated_unvoiced(
     notes: list[Note],
     voiced: list[tuple[float, float]],
     *,
-    min_gap: float = 1.2,
+    min_gap: float = 1.0,
 ) -> tuple[list[Note], int]:
-    """Drop notes that are RMS-unvoiced AND isolated on both sides.
+    """Drop RMS-unvoiced notes that are far from ANY genuinely-sung note.
 
     The CTC stretches a once-written scat line (night-dancer's Tu-tu-lu)
     across the whole repeated section, so stray char windows deep in the
-    interlude rescue separation-bleed ghosts — one lone bar every couple of
-    seconds. Truly sung soft passages come in clusters (neighbours within
-    min_gap), so requiring isolation on BOTH sides kills only the strays.
+    interlude rescue separation-bleed ghosts. The char-evidence union is
+    there on purpose (it protects the softly-sung scat the RMS VAD misses),
+    so we can't just require RMS. Instead: real soft singing happens next to
+    other (louder, RMS-voiced) notes; interlude ghosts float alone. So an
+    RMS-unvoiced note survives only if an RMS-VOICED note lies within min_gap
+    on either side — the voiced anchors of the actual phrase. Measuring
+    against voiced notes (not raw neighbours) is what kills the clustered
+    ghosts the old neighbour-gap test propped up.
+
+    Note: only chidori + night-dancer are on the portrait path today; for a
+    future song with a wholly-soft long phrase (RMS-unvoiced throughout) this
+    could over-drop — `ghosts` is logged so a new portrait render surfaces it.
     """
+    def sung(n: Note) -> bool:
+        return any(n[0] < we and n[1] > ws for ws, we in voiced)
+
+    voiced_spans = [(s, e) for (s, e, _p) in notes if sung((s, e, 0))]
     out: list[Note] = []
     dropped = 0
-    for k, (s, e, p) in enumerate(notes):
-        sung = any(s < we and e > ws for ws, we in voiced)
-        prev_gap = s - notes[k - 1][1] if k > 0 else float("inf")
-        next_gap = notes[k + 1][0] - e if k + 1 < len(notes) else float("inf")
-        if not sung and prev_gap > min_gap and next_gap > min_gap:
+    for (s, e, p) in notes:
+        if sung((s, e, p)):
+            out.append((s, e, p))
+            continue
+        prev = max((ve for vs, ve in voiced_spans if ve <= s), default=float("-inf"))
+        nxt = min((vs for vs, ve in voiced_spans if vs >= e), default=float("inf"))
+        if (s - prev) > min_gap and (nxt - e) > min_gap:
             dropped += 1
             continue
         out.append((s, e, p))
@@ -155,6 +170,36 @@ def split_notes_at_chars(
                 added += 1
         out.append((prev, e, p))
     return sorted(out), added
+
+
+def apply_melisma_splits(
+    notes: list[Note], patches: list[dict], *, eps: float = 1e-3,
+) -> tuple[list[Note], int]:
+    """Replace a GAME-merged melisma with hand-authored sub-notes.
+
+    GAME segments acoustically, so a long-vowel melisma sung as several
+    distinct pitches on ONE mora collapses to a single sustained note —
+    split_notes_at_chars can't recover it (no interior char onset on a
+    single mora). An override entry {"melisma_split":[lo,hi],"into":[[s,e,
+    pitch],...]} replaces every note fully inside [lo,hi] with the listed
+    sub-notes. Display-layer only; ear-confirmed per song. Runs AFTER
+    split_notes_at_chars so the mora-sized note is the only thing in-window.
+    """
+    splits = [p for p in patches if "melisma_split" in p]
+    if not splits:
+        return notes, 0
+    out = list(notes)
+    applied = 0
+    for sp in splits:
+        lo, hi = (float(x) for x in sp["melisma_split"])
+        kept = [n for n in out if not (n[0] >= lo - eps and n[1] <= hi + eps)]
+        if len(kept) == len(out):
+            continue  # nothing matched the window; leave a trace via count
+        for s, e, pitch in sp["into"]:
+            kept.append((float(s), float(e), int(pitch)))
+        out = sorted(kept)
+        applied += 1
+    return out, applied
 
 
 # ---- bar lines: one row-group per sentence, greedy to the right edge ----
@@ -417,15 +462,22 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     notes, wiggles = mdg.absorb_wiggles(notes)
 
     patched = 0
+    patches: list[dict] = []
     if pitch_patch_path:
         patches = json.loads(Path(pitch_patch_path).read_text(encoding="utf-8"))
-        notes, patched, missed = mdg.apply_pitch_patch(notes, patches)
+        pitch_entries = [p for p in patches if "at" in p]
+        notes, patched, missed = mdg.apply_pitch_patch(notes, pitch_entries)
         for t in missed:
             click.echo(f"[portrait-grid] WARNING: pitch patch at {t:.2f}s matched no note")
 
     # cut fused legato notes at MMS char onsets — one bar per mora (after
     # drop/absorb so the slivers are not folded straight back in).
     notes, mora_split = split_notes_at_chars(notes, aligned)
+
+    # replace a GAME-merged melisma with hand-authored descending sub-notes
+    # (single mora -> no char onset to split on). After the char split so the
+    # mora-sized note is the only thing inside the override window.
+    notes, melisma = apply_melisma_splits(notes, patches)
 
     qnotes = mdg.quantize(notes, quarter=quarter)
     line_of = mdg.assign_lines(notes, line_starts)
@@ -464,7 +516,7 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     click.echo(f"[portrait-grid] bar_lines={len(bar_lines)} "
                f"lyric_lines={len(lyric_lines)} "
                f"dropped={dropped} wiggles={wiggles} patched={patched} "
-               f"mora_split={mora_split} ghosts={ghosts} "
+               f"mora_split={mora_split} melisma={melisma} ghosts={ghosts} "
                f"pitch=[{pitch_min},{pitch_max}] quarter={quarter:.3f}s")
 
 

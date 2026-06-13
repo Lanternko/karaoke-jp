@@ -21,7 +21,9 @@ fill is used.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 import click
@@ -246,6 +248,54 @@ def render_frame(frame: Image.Image, grid: dict, t: float) -> None:
             _draw_lyric_row(frame, draw, ll, t)
 
 
+def _detect_content_crop(bg_video: str) -> str:
+    """ffmpeg crop= string stripping a source's baked-in vertical letterbox.
+
+    Some sources are themselves letterboxed (e.g. a 2.35:1 picture inside a
+    16:9 container). Scaling that whole frame to the MV height passes the
+    black bars through, so they land inside the fixed MV slot as a gap
+    between the bars and the picture. We cropdetect the real content height
+    once and strip it BEFORE scaling, so the picture fills the slot and the
+    three blocks stay tight. Returns a full-frame no-op for clean sources.
+    Width is kept full (0 x-offset) to dodge near-black side jitter — only
+    vertical letterbox causes the reported gap.
+    """
+    def _probe_int(key: str) -> int | None:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", f"stream={key}", "-of", "csv=p=0", bg_video],
+            capture_output=True, text=True)
+        try:
+            return int(r.stdout.strip().split(",")[0])
+        except (ValueError, IndexError):
+            return None
+
+    w, h = _probe_int("width"), _probe_int("height")
+    if not w or not h:
+        return ""  # can't probe -> no crop filter
+    dr = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", bg_video], capture_output=True, text=True)
+    try:
+        dur = float(dr.stdout.strip())
+    except ValueError:
+        dur = 60.0
+    ss = max(0.0, min(dur * 0.4, dur - 5))
+    out = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-ss", f"{ss:.1f}", "-t", "5", "-i", bg_video,
+         "-vf", "cropdetect=limit=24:round=2:reset=0", "-f", "null", "-"],
+        capture_output=True, text=True)
+    crops = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", out.stderr)
+    if not crops:
+        return f"crop={w}:{h}:0:0"
+    (ch, cy), _ = Counter((int(c[1]), int(c[3])) for c in crops).most_common(1)[0]
+    # sanity clamp: never trust an absurd over-crop from a transient dark
+    # window — require >= half the frame, else no-op.
+    if ch < h * 0.5:
+        return f"crop={w}:{h}:0:0"
+    return f"crop={w}:{ch}:0:{cy}"   # full width, detected content height/offset
+
+
 def _build_ffmpeg(audio_path: str, out_path: str, bg_video: str | None,
                   duration: float) -> list[str]:
     base = ["ffmpeg", "-y",
@@ -253,11 +303,13 @@ def _build_ffmpeg(audio_path: str, out_path: str, bg_video: str | None,
             "-s", f"{W}x{H}", "-pix_fmt", "rgba", "-r", str(FPS),
             "-i", "-"]
     if bg_video:
+        mv_crop = _detect_content_crop(bg_video)
+        mv_pre = f"{mv_crop}," if mv_crop else ""
         filt = (
             "[1:v]split[bga][bgb];"
             f"[bga]scale={W}:{H}:force_original_aspect_ratio=increase,"
             f"crop={W}:{H},boxblur=20:2,eq=brightness=-0.25[blur];"
-            f"[bgb]scale=-2:{MV_H},crop=min(iw\\,{W}):{MV_H}[mv];"
+            f"[bgb]{mv_pre}scale=-2:{MV_H},crop=min(iw\\,{W}):{MV_H}[mv];"
             f"[blur][mv]overlay=(W-w)/2:{MV_Y},fps={FPS}[bg];"
             "[bg][0:v]overlay=0:0,format=yuv420p[v]"
         )
