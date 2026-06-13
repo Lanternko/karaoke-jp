@@ -31,14 +31,16 @@ W, H = 1080, 1920
 FPS = 60
 MARGIN_X = 60
 
-# vertical layout (top -> bottom: bars A, bars B, MV, lyric A, lyric B)
-BARS_A_TOP = 70
+# vertical layout (top -> bottom: bars A, bars B, MV, lyric A, lyric B).
+# Symmetric: top panel 0..480, MV 480..1440 (960 tall, centered), bottom
+# panel 1440..1920 — no dead band at the screen edges.
+BARS_A_TOP = 50
 BAR_AREA_H = 190
-BARS_B_TOP = BARS_A_TOP + BAR_AREA_H + 20
-BARS_PANEL = (40, BARS_B_TOP + BAR_AREA_H + 20)
-LYRIC_A_TOP = 1530
-LYRIC_B_TOP = LYRIC_A_TOP + 130
-LYRIC_PANEL = (LYRIC_A_TOP - 60, LYRIC_B_TOP + 110)
+BARS_B_TOP = BARS_A_TOP + BAR_AREA_H + 20      # 260
+BARS_PANEL = (0, 480)
+LYRIC_A_TOP = 1570
+LYRIC_B_TOP = 1750
+LYRIC_PANEL = (1440, 1920)
 
 BARS_Y = {"A": BARS_A_TOP, "B": BARS_B_TOP}
 LYRIC_Y = {"A": LYRIC_A_TOP, "B": LYRIC_B_TOP}
@@ -50,6 +52,10 @@ MV_Y = (BARS_PANEL[1] + (LYRIC_PANEL[0] - BARS_PANEL[1] - MV_H) // 2)
 
 BAR_RADIUS = 5
 BAR_H_PX = 14
+# fixed vertical scale so small melodic moves are visible (the full-song
+# range crammed into one row read as flat); each row self-centers on its
+# own pitch window, compressing only if a wide row would overflow.
+PX_PER_SEMITONE = 13
 
 COL_BAR_UPCOMING = (150, 150, 150, 255)
 COL_BAR_WIPED = (255, 140, 0, 255)
@@ -77,13 +83,21 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     return _font_cache[size]
 
 
-def _bar_y(pitch: int, pitch_min: int, pitch_max: int) -> int:
-    """Map MIDI pitch to y offset within the bar area (higher = higher)."""
-    span = max(pitch_max - pitch_min, 1)
-    frac = (pitch - pitch_min) / span
-    y_bottom = BAR_AREA_H - BAR_H_PX - 8
-    y_top = 8
-    return int(y_bottom - frac * (y_bottom - y_top))
+def _bar_y(pitch: int, row_lo: int, row_hi: int) -> int:
+    """Map MIDI pitch to y within the bar area, scaled to THIS row's range.
+
+    The row centers on its own [row_lo, row_hi] window at a fixed
+    PX_PER_SEMITONE, so a 1-2 semitone step is a visible vertical move
+    (the old full-song mapping gave ~6 px/semitone and read as flat). A
+    row whose range would overflow the area compresses to fit.
+    """
+    usable_top, usable_bot = 8, BAR_AREA_H - BAR_H_PX - 8
+    span = max(row_hi - row_lo, 1)
+    px = min(PX_PER_SEMITONE, (usable_bot - usable_top) / span)
+    area_mid = (usable_top + usable_bot) / 2
+    mid = (row_lo + row_hi) / 2
+    y = area_mid - (pitch - mid) * px
+    return int(min(max(y, usable_top), usable_bot))
 
 
 def _find_visible(lines: list[dict], row: str, t: float) -> dict | None:
@@ -111,16 +125,20 @@ def _wipe_q(bars: list[dict], t: float) -> float:
 
 
 def _draw_bar_row(draw: ImageDraw.ImageDraw, line: dict, t: float,
-                  q_px: float, pitch_min: int, pitch_max: int) -> None:
+                  q_px: float) -> None:
     bars = line["bars"]
     top = BARS_Y[line["row"]]
-    preview = t < line["time_start"]
+    # whole sentence (incl. wrapped continuation rows) turns "upcoming"
+    # the instant it starts being sung; only a different sentence previews.
+    preview = t < line.get("sent_start", line["time_start"])
     wipe = -1.0 if preview else _wipe_q(bars, t)
 
+    pitches = [b["pitch"] for b in bars]
+    row_lo, row_hi = min(pitches), max(pitches)
     for bar in bars:
         bx = MARGIN_X + bar["x_q"] * q_px
         bw = bar["w_q"] * q_px
-        by = top + _bar_y(bar["pitch"], pitch_min, pitch_max)
+        by = top + _bar_y(bar["pitch"], row_lo, row_hi)
 
         if preview:
             col = COL_BAR_PREVIEW
@@ -200,7 +218,11 @@ def _draw_lyric_row(frame: Image.Image, draw: ImageDraw.ImageDraw,
             ruby_col = COL_TEXT_WIPED if (not preview and t >= c["real_start"]) else col
             rbbox = ruby_font.getbbox(c["ruby"])
             rw = rbbox[2] - rbbox[0]
-            rx = cx + (widths[ci] - rw) / 2
+            # center the furigana over the WHOLE kanji-run it reads, not
+            # just its first glyph (余所 -> よそ spans both characters).
+            span = c.get("ruby_span", 1)
+            run_w = sum(widths[ci:ci + span]) + max(0, span - 1) * CHAR_SPACING
+            rx = cx + (run_w - rw) / 2
             draw.text((rx, text_top - RUBY_SIZE - 4), c["ruby"],
                       fill=ruby_col, font=ruby_font)
         cx += widths[ci] + CHAR_SPACING
@@ -209,7 +231,6 @@ def _draw_lyric_row(frame: Image.Image, draw: ImageDraw.ImageDraw,
 def render_frame(frame: Image.Image, grid: dict, t: float) -> None:
     draw = ImageDraw.Draw(frame)
     q_px = (W - 2 * MARGIN_X) / grid["quarters_per_row"]
-    pmin, pmax = grid["pitch_min"], grid["pitch_max"]
 
     draw.rectangle([0, BARS_PANEL[0], W, BARS_PANEL[1]], fill=COL_PANEL)
     draw.rectangle([0, LYRIC_PANEL[0], W, LYRIC_PANEL[1]], fill=COL_PANEL)
@@ -217,7 +238,7 @@ def render_frame(frame: Image.Image, grid: dict, t: float) -> None:
     for row in ("A", "B"):
         ln = _find_visible(grid["bar_lines"], row, t)
         if ln:
-            _draw_bar_row(draw, ln, t, q_px, pmin, pmax)
+            _draw_bar_row(draw, ln, t, q_px)
         ll = _find_visible(grid["lyric_lines"], row, t)
         if ll:
             _draw_lyric_row(frame, draw, ll, t)

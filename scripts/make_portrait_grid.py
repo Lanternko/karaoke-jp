@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
 import make_display_grid as mdg  # noqa: E402
+from karaoke_jp.lrc_export import split_furigana  # noqa: E402
 from karaoke_jp.midi_markers import (  # noqa: E402
     _intersect_windows,
     _lyric_windows,
@@ -132,13 +133,18 @@ def split_notes_at_chars(
 # ---- bar lines: one row-group per sentence, greedy to the right edge ----
 
 def _close_bar_row(bars: list[dict], cursor: float, quarter: float,
-                   row_idx: int) -> dict:
+                   row_idx: int, sent_id: int, sent_start: float) -> dict:
     return {
         "row": "A" if row_idx % 2 == 0 else "B",
         "bars": bars,
         "width_q": cursor / quarter,
         "time_start": bars[0]["real_start"],
         "time_end": bars[-1]["real_end"],
+        # the lyric line this row belongs to, and when that whole line
+        # starts being sung — so wrapped continuation rows stay "upcoming"
+        # (not previewed-grey) until the sentence actually begins.
+        "sent": sent_id,
+        "sent_start": sent_start,
     }
 
 
@@ -179,6 +185,8 @@ def build_bar_lines(
     lines: list[dict] = []
     row_idx = 0
     for sent in sentences:
+        sent_id = line_of[sent[0]]
+        sent_start = notes[sent[0]][0]
         bars: list[dict] = []
         cursor = 0.0
         prev: int | None = None
@@ -195,7 +203,8 @@ def build_bar_lines(
                 else:
                     space = 0.0
             if bars and cursor + space + slot > row_budget:
-                lines.append(_close_bar_row(bars, cursor, quarter, row_idx))
+                lines.append(_close_bar_row(bars, cursor, quarter, row_idx,
+                                            sent_id, sent_start))
                 row_idx += 1
                 bars = []
                 cursor = 0.0
@@ -211,7 +220,8 @@ def build_bar_lines(
             cursor += slot
             prev = i
         if bars:
-            lines.append(_close_bar_row(bars, cursor, quarter, row_idx))
+            lines.append(_close_bar_row(bars, cursor, quarter, row_idx,
+                                        sent_id, sent_start))
             row_idx += 1
     return lines
 
@@ -219,20 +229,31 @@ def build_bar_lines(
 # ---- lyric lines ----
 
 def _extract_line_chars(line: dict) -> list[dict]:
-    """Flat char list from one aligned_midi.json line, with ruby info."""
+    """Flat char list from one aligned_midi.json line, with ruby info.
+
+    Ruby is attached per kanji-RUN via split_furigana (never the whole
+    token: 足踏み -> あしぶ over 足踏 only, not over み). `ruby_span` is how
+    many chars the reading covers so the renderer can center it over the
+    full run (余所 -> よそ spans both glyphs, not just 余).
+    """
     chars: list[dict] = []
     for tok in line.get("tokens", []):
-        reading = tok.get("reading")
-        is_kanji_tok = not tok.get("kana_only", True) and reading
-        for ci, ch in enumerate(tok.get("chars", [])):
-            entry = {
+        tok_chars = tok.get("chars", [])
+        base = len(chars)
+        for ch in tok_chars:
+            chars.append({
                 "char": ch["char"],
                 "real_start": ch["start"],
                 "real_end": ch["end"],
-            }
-            if is_kanji_tok and ci == 0:
-                entry["ruby"] = reading
-            chars.append(entry)
+            })
+        reading = tok.get("reading")
+        if tok.get("kana_only", True) or not reading:
+            continue
+        surface = "".join(ch["char"] for ch in tok_chars)
+        for _seg, ruby, cs, ce in split_furigana(surface, reading):
+            if ruby:
+                chars[base + cs]["ruby"] = ruby
+                chars[base + cs]["ruby_span"] = ce - cs
     return chars
 
 
