@@ -1,0 +1,9 @@
+[
+  {"at": 92.31, "pitch": 70, "start": 92.19, "end": 92.49,
+   "note": "Tu-tu-lu hook note 1/6 — A4 staccato. GAME's union missed the soft scat (RMS-unvoiced); RMVPE F0 over 92.2-94.95 is six clean attacks all at midi 70. ENSURE-insert the full hook (runs after the ghost drop). The iconic night-dancer 'tu-tu-lu-tu-tu-lu' — NEEDS KOJEK EAR-CONFIRM on count/rhythm."},
+  {"at": 92.86, "pitch": 70, "start": 92.69, "end": 93.09, "note": "Tu-tu-lu hook 2/6 (A4)"},
+  {"at": 93.44, "pitch": 70, "start": 93.33, "end": 93.63, "note": "Tu-tu-lu hook 3/6 (A4)"},
+  {"at": 94.01, "pitch": 70, "start": 93.90, "end": 94.20, "note": "Tu-tu-lu hook 4/6 (A4)"},
+  {"at": 94.46, "pitch": 70, "start": 94.36, "end": 94.62, "note": "Tu-tu-lu hook 5/6 (A4)"},
+  {"at": 94.82, "pitch": 70, "start": 94.69, "end": 94.99, "note": "Tu-tu-lu hook 6/6 (A4)"}
+]
