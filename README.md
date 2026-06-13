@@ -9,7 +9,7 @@
 
 ## 成果
 
-> 截圖以**純底**為主；直式上半的背景是**原創抽象示意圖**（非版權素材）。pipeline 也支援把畫面疊在原 MV／專輯封面／靜態圖上，但那是版權衍生、僅限個人練唱自用，故不放進公開 repo。
+> 截圖以**純底**為主；直式中段的 MV 區放的是**原創抽象示意圖**（非版權素材）。pipeline 也支援把畫面疊在原 MV／專輯封面／靜態圖上，但那是版權衍生、僅限個人練唱自用，故不放進公開 repo。
 
 <img src="figures/v14_main.png" width="100%" alt="canonical v14 純底畫面：扁平音高方塊（黃=已唱、白=未到）+ songinfo HUD（♪音符數、音高傾向箭頭、音域/調性 gauge）+ 逐字歌詞 + 振假名" />
 
@@ -35,12 +35,12 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="figures/v14_portrait_a.png" alt="直式 9:16：雙行交替 pitch bar（橘=當前句、灰=另一句）+ 逐字 wipe + 振假名" /></td>
-    <td width="50%"><img src="figures/v14_portrait_b.png" alt="直式 9:16：雙行 pitch bar + 雙行歌詞 + 振假名" /></td>
+    <td width="50%"><img src="figures/v14_portrait_a.png" alt="直式 9:16：樂譜（上）→ MV（中，示意）→ 歌詞（下）" /></td>
+    <td width="50%"><img src="figures/v14_portrait_b.png" alt="直式 9:16：樂譜（上）→ MV（中，示意）→ 歌詞（下）" /></td>
   </tr>
 </table>
 
-<p align="center"><sub>直式同為 canonical v14（<code>/render-portrait</code>）；上半背景為<strong>原創抽象示意圖</strong>，實際由使用者自備 MV／靜態圖。</sub></p>
+<p align="center"><sub>直式版面：<strong>樂譜（上）→ MV（中）→ 歌詞（下）</strong>，canonical v14（<code>/render-portrait</code>）。中段 MV 為<strong>原創抽象示意圖</strong>，實際由使用者自備 MV／靜態圖。</sub></p>
 
 <img src="figures/tuki-zero_melody.png" width="100%" alt="melody.mid 音符散佈圖：626 顆音符、音高 49–79" />
 <p align="center"><sub>M2 抽出的 melody.mid（626 顆音符、音高 49–79）</sub></p>
