@@ -11,18 +11,18 @@
 
 > 以下截圖一律用**純底**版面展示。pipeline 也支援把畫面疊在原 MV／專輯封面／靜態圖上，但那是版權衍生、僅限個人練唱自用，故不放進公開 repo。
 
-<img src="figures/hud_v14_frame.png" width="100%" alt="canonical v14 純底：音高方塊 + songinfo HUD（音符計數、音高傾向箭頭、音域/調性 gauge）" />
+<img src="figures/v14_main.png" width="100%" alt="canonical v14 純底畫面：扁平音高方塊（黃=已唱、白=未到）+ songinfo HUD（♪音符數、音高傾向箭頭、音域/調性 gauge）+ 逐字歌詞 + 振假名" />
 
 <table>
   <tr>
-    <td width="33%"><img src="figures/tuki-zero_frame_verse.png" alt="主歌：雙行逐字歌詞 + 振假名" /></td>
-    <td width="33%"><img src="figures/tuki-zero_frame_chorus.png" alt="副歌：逐字 wipe" /></td>
-    <td width="33%"><img src="figures/tuki-zero_frame_tail.png" alt="句尾：延音音高方塊" /></td>
+    <td width="33%"><img src="figures/v14_wipe.png" alt="逐字 wipe：現在音符高亮，黃色已唱、白色未到" /></td>
+    <td width="33%"><img src="figures/v14_furigana.png" alt="振假名：只給 kanji-run 標假名，hiragana 不標" /></td>
+    <td width="33%"><img src="figures/v14_dualline.png" alt="雙行歌詞 + 音域/調性 gauge" /></td>
   </tr>
   <tr>
-    <td align="center"><sub>主歌 — 雙行逐字 + 振假名</sub></td>
-    <td align="center"><sub>副歌 — 逐字 wipe</sub></td>
-    <td align="center"><sub>句尾 — 延音方塊</sub></td>
+    <td align="center"><sub>逐字 wipe — 現在音符高亮</sub></td>
+    <td align="center"><sub>振假名 — 只標 kanji-run</sub></td>
+    <td align="center"><sub>雙行歌詞 + 音域/調性 gauge</sub></td>
   </tr>
 </table>
 
