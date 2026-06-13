@@ -9,7 +9,7 @@
 
 ## 成果
 
-> 以下截圖一律用**純底**版面展示。pipeline 也支援把畫面疊在原 MV／專輯封面／靜態圖上，但那是版權衍生、僅限個人練唱自用，故不放進公開 repo。
+> 截圖以**純底**為主；直式上半的背景是**原創抽象示意圖**（非版權素材）。pipeline 也支援把畫面疊在原 MV／專輯封面／靜態圖上，但那是版權衍生、僅限個人練唱自用，故不放進公開 repo。
 
 <img src="figures/v14_main.png" width="100%" alt="canonical v14 純底畫面：扁平音高方塊（黃=已唱、白=未到）+ songinfo HUD（♪音符數、音高傾向箭頭、音域/調性 gauge）+ 逐字歌詞 + 振假名" />
 
@@ -40,7 +40,7 @@
   </tr>
 </table>
 
-<p align="center"><sub>直式同為 canonical v14（<code>/render-portrait</code>）；上方留白可疊原 MV／靜態圖，此處示意純底。</sub></p>
+<p align="center"><sub>直式同為 canonical v14（<code>/render-portrait</code>）；上半背景為<strong>原創抽象示意圖</strong>，實際由使用者自備 MV／靜態圖。</sub></p>
 
 <img src="figures/tuki-zero_melody.png" width="100%" alt="melody.mid 音符散佈圖：626 顆音符、音高 49–79" />
 <p align="center"><sub>M2 抽出的 melody.mid（626 顆音符、音高 49–79）</sub></p>
@@ -128,14 +128,16 @@ bash scripts/setup.sh
 - **Lyric Video 背景**：來源已燒入歌詞時加 `--no-video`，自備 `background.png` 避免撞圖
 - **已有樂譜 MIDI**：`karaoke-jp score-melody ... --score-midi score.mid`，把樂譜當 pitch ground truth、audio 只決定 timing
 
-### GUI
+### GUI（實驗性）
+
+> 本機 Gradio 包裝，已實作（`karaoke-jp gui`）但**尚未在乾淨環境完整驗證**；主要入口仍是上面的 CLI / Snakemake。它是本機程式、**非 hosted 服務**。
 
 ```bash
 ~/venvs/karaoke-jp/bin/pip install -e '.[batch,gui]'
 ~/venvs/karaoke-jp/bin/karaoke-jp gui --host 127.0.0.1 --port 7860
 ```
 
-本機 Gradio 介面包裝同一條 pipeline：輸入 YouTube URL 或上傳 mp4、貼歌詞、拉人聲混音比例、選背景模式。預設只綁 `127.0.0.1`，不開 share。
+輸入 YouTube URL 或上傳 mp4、貼歌詞、拉人聲混音比例、選背景（原影片／純黑）。預設只綁 `127.0.0.1`、不開 share。
 
 ---
 
