@@ -253,6 +253,348 @@ def _hide_minmax_columns(app) -> None:
         app.s.BAR_PASSED_COUNT_ANIMATION_DICT[k] = _replace_pos(an, OFF, key="colors")
 
 
+# --- song-info HUD: static whole-song stats replacing the cumulative counters ---
+_NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+_NOTE_NAMES_FLAT = ["C", "D♭", "D", "E♭", "E", "F", "G♭", "G", "A♭", "A", "B♭", "B"]
+
+
+def _pitch_name(p: int, use_flats: bool = False) -> str:
+    # MIDI 60 = C4 (Yamaha/JOYSOUND convention: octave = p // 12 - 1).
+    names = _NOTE_NAMES_FLAT if use_flats else _NOTE_NAMES
+    return f"{names[p % 12]}{p // 12 - 1}"
+
+
+def _compute_song_stats(notes) -> dict:
+    """Whole-song note statistics, computed once. Static for the whole video.
+
+    ``notes`` is ``app.notes`` (display-timeline notes: pitch and order are the
+    real ones, only time is warped). Mirrors MID2BAR's own ``long`` definition
+    (>90th-percentile duration) but replaces its musically meaningless
+    ``range / 2`` leap threshold with a fixed >= 7 semitones (perfect fifth).
+    """
+    import numpy as _np
+
+    pitches = [n["pitch"] for n in notes]
+    durs = [n["end"] - n["start"] for n in notes]
+    if not pitches:
+        return {"count": 0, "pmin": 60, "pmax": 60, "span": 0,
+                "high": 0, "up": 0, "down": 0, "long": 0}
+    pmin, pmax = min(pitches), max(pitches)
+    p90 = float(_np.percentile(durs, 90)) if durs else 0.0
+    up = sum(1 for i in range(len(notes) - 1)
+             if notes[i + 1]["pitch"] - notes[i]["pitch"] >= 7)
+    down = sum(1 for i in range(len(notes) - 1)
+               if notes[i + 1]["pitch"] - notes[i]["pitch"] <= -7)
+    return {
+        "count": len(notes),
+        "pmin": pmin, "pmax": pmax, "span": pmax - pmin,
+        "high": sum(1 for p in pitches if p >= pmax - 2),
+        "up": up, "down": down,
+        "long": sum(1 for d in durs if d > p90),
+    }
+
+
+def _format_song_info(st: dict, use_flats: bool = False) -> str:
+    return (
+        f"音符 {st['count']}　"
+        f"音域 {_pitch_name(st['pmin'], use_flats)}〜{_pitch_name(st['pmax'], use_flats)}"
+        f"（{st['span']}半音）　"
+        f"高音 {st['high']}　"
+        f"跳躍 ↑{st['up']} ↓{st['down']}　"
+        f"長音 {st['long']}"
+    )
+
+
+# Krumhansl-Schmuckler key profiles (duration-weighted pitch-class correlation).
+_KS_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+_KS_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+# Major keys conventionally spelled with flats: F, B♭, E♭, A♭, D♭ (G♭/F♯ left sharp).
+_FLAT_MAJOR_PCS = {5, 10, 3, 8, 1}
+
+
+def _audio_pcp(path: str):
+    """Peak-based pitch-class profile of a PCM16 WAV (None if unreadable).
+
+    Per frame only local spectral maxima vote (top-10, 80-2000 Hz), which keeps
+    percussion/overtone smear out of the chroma -- a naive all-bin STFT chroma
+    of a full mix ranks garbage keys (C major on chidori). A circular-mean
+    tuning estimate is subtracted before pitch-class rounding.
+    """
+    import wave
+
+    import numpy as _np
+
+    try:
+        wf = wave.open(path, "rb")
+        nch, sw, fr = wf.getnchannels(), wf.getsampwidth(), wf.getframerate()
+        if sw != 2:
+            return None
+        x = _np.frombuffer(wf.readframes(wf.getnframes()), dtype=_np.int16)
+    except Exception:
+        return None
+    x = x.astype(_np.float32)
+    if nch == 2:
+        x = x.reshape(-1, 2).mean(1)
+    x /= 32768.0
+    N, hop = 8192, 4096
+    win = _np.hanning(N)
+    freqs = _np.fft.rfftfreq(N, 1 / fr)
+    bidx = _np.where((freqs >= 80) & (freqs <= 2000))[0]
+    peaks = []
+    for i in range(0, len(x) - N, hop):
+        m = _np.abs(_np.fft.rfft(x[i:i + N] * win))[bidx]
+        cand = _np.where((m[1:-1] > m[:-2]) & (m[1:-1] > m[2:]))[0] + 1
+        if not len(cand):
+            continue
+        for j in cand[_np.argsort(m[cand])[-10:]]:
+            peaks.append((69 + 12 * _np.log2(freqs[bidx[j]] / 440.0), m[j]))
+    if not peaks:
+        return None
+    arr = _np.asarray(peaks)
+    ang = _np.exp(2j * _np.pi * (arr[:, 0] % 1.0))
+    tune = float(_np.angle(_np.average(ang, weights=arr[:, 1])) / (2 * _np.pi))
+    pcp = _np.zeros(12)
+    _np.add.at(pcp, _np.round(arr[:, 0] - tune).astype(int) % 12,
+               _np.sqrt(arr[:, 1]))
+    return pcp / pcp.sum()
+
+
+def _detect_key(notes, audio_path: str | None = None) -> dict:
+    """Best-correlation K-S key guess over all 24 keys.
+
+    Prefers the accompaniment evidence: a peak-PCP of the render audio (the
+    mix is instrumental-dominated). Melody-only K-S falls for the dominant on
+    melodies that camp on the 5th (chidori: melody says B♭, harmony's A♭ says
+    E♭ -- the professor-validated key). Falls back to duration-weighted melody
+    pitch classes when the audio isn't readable. Returns top-3 with scores for
+    honest logging, plus the winner's spelling convention (sharps/flats).
+    """
+    import numpy as _np
+
+    w = _audio_pcp(audio_path) if audio_path else None
+    source = "harmony" if w is not None else "melody"
+    if w is None:
+        w = _np.zeros(12)
+        for n in notes:
+            w[n["pitch"] % 12] += n["end"] - n["start"]
+    scored = []
+    for mode, profile in (("major", _KS_MAJOR), ("minor", _KS_MINOR)):
+        prof = _np.asarray(profile, float)
+        for tonic in range(12):
+            r = float(_np.corrcoef(_np.roll(prof, tonic), w)[0, 1])
+            scored.append((r, tonic, mode))
+    scored.sort(reverse=True)
+
+    def disp(tonic, mode):
+        rel_major = tonic if mode == "major" else (tonic + 3) % 12
+        flats = rel_major in _FLAT_MAJOR_PCS
+        names = _NOTE_NAMES_FLAT if flats else _NOTE_NAMES
+        return names[tonic] + ("m" if mode == "minor" else ""), flats
+
+    r, tonic, mode = scored[0]
+    name, use_flats = disp(tonic, mode)
+    return {
+        "name": name,
+        "use_flats": use_flats,
+        "corr": r,
+        "source": source,
+        "top": [(disp(t, m)[0], rr) for rr, t, m in scored[:3]],
+    }
+
+
+def _minimal_icon(kind: str, color, size: int = 34):
+    """Stroke-style minimal HUD icons, supersampled 4x for clean edges.
+
+    Kojek rejected both label text ("low") and MID2BAR's glossy arrow PNGs --
+    these are flat, rounded-cap line glyphs in the category colors:
+    high = ceiling bar + chevron pushing up; up/down = diagonal jump arrows;
+    long = wide pill dash; range = ascending level bars (replaces the baked
+    rainbow double-arrow next to the range gauge).
+    """
+    import pygame
+
+    W = size * 4
+    surf = pygame.Surface((W, W), pygame.SRCALPHA)
+    c = (*color, 255)
+    lw = max(2, int(W * 0.11))
+
+    def line(a, b):
+        pygame.draw.line(surf, c, a, b, lw)
+        pygame.draw.circle(surf, c, (int(a[0]), int(a[1])), lw // 2)
+        pygame.draw.circle(surf, c, (int(b[0]), int(b[1])), lw // 2)
+
+    if kind == "high":
+        line((W * .20, W * .20), (W * .80, W * .20))
+        line((W * .28, W * .74), (W * .50, W * .44))
+        line((W * .50, W * .44), (W * .72, W * .74))
+    elif kind == "up":
+        line((W * .24, W * .76), (W * .72, W * .28))
+        line((W * .44, W * .28), (W * .72, W * .28))
+        line((W * .72, W * .28), (W * .72, W * .56))
+    elif kind == "down":
+        line((W * .24, W * .24), (W * .72, W * .72))
+        line((W * .44, W * .72), (W * .72, W * .72))
+        line((W * .72, W * .72), (W * .72, W * .44))
+    elif kind == "long":
+        pygame.draw.rect(
+            surf, c, pygame.Rect(W * .12, W * .50 - lw, W * .76, lw * 2),
+            border_radius=lw)
+    elif kind == "range":
+        bw = int(lw * 1.7)
+        base = W * .82
+        for x, h in ((.24, .26), (.50, .46), (.76, .66)):
+            pygame.draw.rect(
+                surf, c,
+                pygame.Rect(int(W * x - bw / 2), int(base - W * h), bw, int(W * h)),
+                border_radius=bw // 2)
+    return pygame.transform.smoothscale(surf, (size, size))
+
+
+def _erase_baked_hud_strip(app) -> None:
+    """Clear MID2BAR's baked counter chrome from the project_front/back skins.
+
+    Both are ``convert_alpha()`` SRCALPHA surfaces (tools.load_image). Measured
+    extents on the 1920x1080 flat theme:
+      * project_front dots/labels/icons: x0-1097, y348-382
+      * project_back  dark counter slots: x20-1240, y~325-414
+    Keepers (NOT cleared): the range gauge slot (project_back x1400-1900) and
+    its rainbow arrow icon (project_front x1416-1459) -- both at x>=1400 -- plus
+    the corner gray boxes and the pitch-bar bg panel, all at y<=319. Clearing
+    x0-1300 below y325 stays clear of every keeper.
+    """
+    import pygame
+
+    for surf, rect in (
+        (app.assets.project_front, pygame.Rect(0, 338, 1300, 56)),
+        (app.assets.project_back, pygame.Rect(0, 325, 1300, 95)),
+    ):
+        assert surf.get_flags() & pygame.SRCALPHA, (
+            "HUD skin surface is not SRCALPHA; an RGBA fill would paint opaque "
+            "black instead of clearing to transparent")
+        surf.fill((0, 0, 0, 0), rect)
+
+
+def _install_song_info_panel(app, time_warp_path: str | None = None,
+                             audio_path: str | None = None) -> None:
+    """Icon-only counters that tick as each event scrolls past the now-bar.
+
+    Kojek-spec v2 (2026-06-13): no words, cross-language. Left pill = five
+    [icon count] groups -- ♪ all notes, ▲ high notes (within 2 semitones of the
+    song top), ↑/↓ leaps (>= 7 semitones, MID2BAR icons), long notes (> p90
+    duration, MID2BAR icon). Counts increase the moment the note's tail crosses
+    the cursor (offline render can't score singing; these are chart events, not
+    judgments). Range info moves onto the gauge: min/max note names at its
+    ends, semitone span top-right, K-S key guess top-left.
+
+    draw_bar_count is NOT wrapped by _apply_time_warp, but app.notes lives on
+    the display timeline when a warp is active -- so we map current_time
+    real->display ourselves before comparing against note ends. Interludes are
+    compressed out of the display timeline, so counters freeze there.
+    """
+    import json as _json
+
+    import numpy as _np
+    import pygame
+
+    _erase_baked_hud_strip(app)
+
+    notes = sorted(app.notes, key=lambda n: (n["start"], n["pitch"]))
+    st = _compute_song_stats(notes)
+    key = _detect_key(notes, audio_path)
+    use_flats = key["use_flats"]
+    print(f"[hud] {_format_song_info(st, use_flats)}", flush=True)
+    print(f"[hud] key guess ({key['source']}): "
+          + "  ".join(f"{n} r={r:.3f}" for n, r in key["top"]), flush=True)
+
+    if time_warp_path:
+        data = _json.loads(Path(time_warp_path).read_text())
+        w_real = _np.asarray(data["real"], float)
+        w_disp = _np.asarray(data["display"], float)
+    else:
+        w_real = w_disp = None
+
+    durs = [n["end"] - n["start"] for n in notes]
+    p90 = float(_np.percentile(durs, 90)) if durs else 0.0
+    pmax = st["pmax"]
+
+    def ends_where(pred):
+        return _np.sort(_np.asarray(
+            [n["end"] for i, n in enumerate(notes) if pred(i, n)], float))
+
+    cat_ends = [
+        ends_where(lambda i, n: True),
+        ends_where(lambda i, n: n["pitch"] >= pmax - 2),
+        ends_where(lambda i, n: i + 1 < len(notes)
+                   and notes[i + 1]["pitch"] - n["pitch"] >= 7),
+        ends_where(lambda i, n: i + 1 < len(notes)
+                   and notes[i + 1]["pitch"] - n["pitch"] <= -7),
+        ends_where(lambda i, n: n["end"] - n["start"] > p90),
+    ]
+
+    # Colors follow BAR_COUNT_DICT's palette so the theme stays coherent.
+    colors = [(235, 235, 240), (255, 239, 85), (230, 89, 37),
+              (45, 153, 232), (101, 227, 94)]
+    font_num = app.bar_count_font
+    ICON = 34
+    icons = [
+        font_num.render("♪", True, colors[0]),
+        _minimal_icon("high", colors[1], ICON),
+        _minimal_icon("up", colors[2], ICON),
+        _minimal_icon("down", colors[3], ICON),
+        _minimal_icon("long", colors[4], ICON),
+    ]
+
+    # Number sits flush-left after its own icon; the wide remainder of each
+    # group is the separator, so a count never reads as the next icon's value.
+    GROUP_W, X0, CY = 126, 44, 365
+    pill = pygame.Surface((5 * GROUP_W + 24, 56), pygame.SRCALPHA)
+    pygame.draw.rect(pill, (0, 0, 0, 150), pill.get_rect(), border_radius=14)
+    pill_pos = (X0 - 12, CY - 28)
+
+    # The glossy flame/arrow PNGs MID2BAR stamps on note bars (draw_notes,
+    # app.py:827) are the old visual language; blank them in this mode. The
+    # jump/long info is already in the HUD counts and visible bar geometry.
+    blank = pygame.Surface((1, 1), pygame.SRCALPHA)
+    app.assets.icons = {k: blank for k in app.assets.icons}
+
+    # Static range labels on the gauge's dark slot (x>=1400 was left unerased).
+    small_font = pygame.font.Font(app.s.BAR_COUNT_FONT, 20)
+    gx, gy = app.s.RANGE_GAUGE_POS
+    gw, gh = app.s.RANGE_GAUGE_W, app.s.RANGE_GAUGE_H
+    lab = (215, 215, 222)
+    lo_s = small_font.render(_pitch_name(st["pmin"], use_flats), True, lab)
+    hi_s = small_font.render(_pitch_name(st["pmax"], use_flats), True, lab)
+    span_s = small_font.render(str(st["span"]), True, lab)
+    key_s = small_font.render(key["name"], True, (160, 160, 172))
+    # Swap the baked rainbow double-arrow (project_front x1416-1459, y350-382)
+    # for a minimal ascending-bars glyph at the same spot.
+    app.assets.project_front.fill((0, 0, 0, 0), pygame.Rect(1404, 332, 72, 60))
+    range_icon = _minimal_icon("range", lab, 36)
+    static_blits = [
+        (range_icon, range_icon.get_rect(centerx=1438, centery=gy + gh // 2)),
+        (lo_s, lo_s.get_rect(left=gx, top=gy + gh + 2)),
+        (hi_s, hi_s.get_rect(right=gx + gw, top=gy + gh + 2)),
+        (span_s, span_s.get_rect(right=gx + gw, bottom=gy - 2)),
+        (key_s, key_s.get_rect(left=gx, bottom=gy - 2)),
+    ]
+
+    def _draw_song_info():
+        t = app.current_time
+        if w_real is not None:
+            t = float(_np.interp(t, w_real, w_disp))
+        app.screen.blit(pill, pill_pos)
+        for i, (icon, ends, color) in enumerate(zip(icons, cat_ends, colors)):
+            gx0 = X0 + i * GROUP_W
+            app.screen.blit(icon, icon.get_rect(left=gx0, centery=CY))
+            cnt = int(_np.searchsorted(ends, t, side="right"))
+            num = font_num.render(str(cnt), True, color)
+            app.screen.blit(num, num.get_rect(left=gx0 + ICON + 8, centery=CY))
+        for surf, rect in static_blits:
+            app.screen.blit(surf, rect)
+
+    app.draw_bar_count = _draw_song_info
+
+
 def _hide_notes_without_visible_lyrics(app) -> None:
     """Only draw pitch bars while a lyric image is actually visible.
 
@@ -310,6 +652,11 @@ def _hide_notes_without_visible_lyrics(app) -> None:
               "bar MIDI then lives on a display timeline; the bar area (notes, "
               "wipe, cursor) sees piecewise-linearly warped time while audio, "
               "lyrics and seekbar stay on real time.")
+@click.option("--hud", type=click.Choice(["legacy", "songinfo", "none"]),
+              default="legacy", show_default=True,
+              help="top counter strip: legacy=MID2BAR cumulative counters "
+              "(min/max hidden, current behaviour), songinfo=static whole-song "
+              "stats pill, none=blank. The range gauge is unaffected.")
 def main(
     audio_path: str,
     midi_path: str,
@@ -320,6 +667,7 @@ def main(
     app_settings_path: str | None,
     assets_json_path: str | None,
     time_warp_path: str | None,
+    hud: str,
 ) -> None:
     # Defaults inside the bundled MID2BAR-Player tree. Resolve to absolute
     # paths BEFORE the os.chdir below — otherwise relative override paths
@@ -459,7 +807,13 @@ def main(
     )
 
     _disable_particles(app)
-    _hide_minmax_columns(app)
+    if hud == "songinfo":
+        _install_song_info_panel(app, time_warp_path, audio_abs)
+    elif hud == "none":
+        _erase_baked_hud_strip(app)
+        app.draw_bar_count = lambda: None
+    else:
+        _hide_minmax_columns(app)
     if time_warp_path is None:
         _hide_notes_without_visible_lyrics(app)
     else:

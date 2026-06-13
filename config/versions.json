@@ -1,0 +1,56 @@
+{
+  "canonical": "v14",
+
+  "profiles": {
+    "v14": {
+      "description": "GAME seg0.3 + MMS timing + v11 display grid + absorb fragments + ensure pitch patch + flat bar skin. Ear-accepted 2026-06-12 (chidori + byoushin).",
+      "date": "2026-06-12",
+
+      "pitch_chain": {
+        "backend": "game_union",
+        "game_language": "ja",
+        "game_seg_threshold": "0.3",
+        "postfix_flags": ["--extend-sustains", "--keep-repeats"],
+        "use_melody_union": true,
+        "comment": "GAME large zero-shot + postfix + union fallback to classic scorefix chain"
+      },
+
+      "timing": {
+        "source": "mms",
+        "line_end_repair": {
+          "tail_top_db": 26,
+          "next_guard": 0.25,
+          "tail_gap": 0.12
+        },
+        "comment": "NextFire mms-300m karaoke-ja CTC forced alignment; line_end_repair for peaky-early offsets"
+      },
+
+      "display_grid": {
+        "quarters_per_page": 16.0,
+        "gap_units": 0.0625,
+        "phrase_gap_units": 1.25,
+        "lead_units": 0.5,
+        "phrase_split_gap": 0.8,
+        "min_note": 0.09,
+        "breath_gap": 0.25,
+        "breath_units": 0.5,
+        "count_in_quarters": 4.0,
+        "flip_delay": 0.5,
+        "note_window_margin": 0.25,
+        "note_tail_allowance": 1.0,
+        "comment": "v11 constant-speed slots; 0.0625q mora gap; breath > 0.25s inserts 0.5q extra"
+      },
+
+      "skin": {
+        "type": "flat_bar",
+        "comment": "TV-style flat bars via make_flat_bar_skin.py"
+      },
+
+      "render": {
+        "vocal_ratio": 0.40,
+        "lrc_block_size": 2,
+        "comment": "40% guide vocal (bumped from 0.30, 2026-06-13, Kojek wanted it louder); 2-phrase LRC blocks (MID2BAR row 2/3 alternation)"
+      }
+    }
+  }
+}
