@@ -3,7 +3,7 @@
 
   "profiles": {
     "v14": {
-      "description": "GAME seg0.3 + MMS timing + v11 display grid + absorb fragments + ensure pitch patch + flat bar skin. Ear-accepted 2026-06-12 (chidori + byoushin).",
+      "description": "GAME seg0.3 + MMS timing + v11 display grid + absorb fragments + ensure pitch patch + flat bar skin + songinfo HUD (essentia key). Ear-accepted 2026-06-12 (chidori + byoushin); HUD + essentia key promoted 2026-06-13.",
       "date": "2026-06-12",
 
       "pitch_chain": {
@@ -50,6 +50,13 @@
         "vocal_ratio": 0.40,
         "lrc_block_size": 2,
         "comment": "40% guide vocal (bumped from 0.30, 2026-06-13, Kojek wanted it louder); 2-phrase LRC blocks (MID2BAR row 2/3 alternation)"
+      },
+
+      "hud": {
+        "mode": "songinfo",
+        "key_backend": "essentia",
+        "key_fallback": "peak_pcp -> melody",
+        "comment": "icon counters + range/key gauge (skill passes --hud songinfo). Essentia KeyExtractor primary (GiantSteps 101: 0.717 wtd vs in-house peak-PCP 0.546); render venv needs `pip install essentia` (in-process, auto-falls back to peak-PCP if absent)"
       }
     }
   }

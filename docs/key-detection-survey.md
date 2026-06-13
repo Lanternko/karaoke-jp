@@ -55,6 +55,24 @@ PCM16,float32 stem 直接餵會 fallback 到空 melody 回垃圾 "C" — render 
 
 → **人聲只要偏,就偏成五度或關係調**(缺和聲脈絡時旋律的兩種典型錯),系統性坐實「key 不走人聲」。
 
+**(C) 外部基準 GiantSteps Key（101 首,JKU 鏡像下載,真實 ground truth）**：速度 + 正確率同時量。
+GiantSteps 是 EDM(曲風偏離我們的 pop,正確率絕對值僅供工具間相對比較)：
+
+| 工具 | MIREX 加權 | exact% | 秒/首(2-min) |
+|---|---|---|---|
+| peak-PCP（我們手刻） | 0.546 | 40.6% | 0.079 |
+| **Essentia KeyExtractor（預設 profile）** | **0.717** | **64.4%** | 0.070 |
+
+→ **方法軸翻盤定案**：chidori 單首打平是假象,**真實 n=101 上 Essentia 大勝**（加權 +0.17、exact +24 分）
+**而且更快**。兩者皆 <0.1s/首 → **沒有工具「太慢」,不需淘汰**。madmom 裝不動（py3.12）沒測到。
+
+**(D) 已採用（2026-06-13）**：Essentia 接成 HUD `_detect_key` 的 **primary**（in-process,
+`~/venvs/karaoke-jp-render` 已 `pip install essentia`,numpy 維持 2.4.4 不受影響;**import 失敗自動
+fallback peak-PCP → melody**,所以非硬依賴）。`essentia.log.warningActive/infoActive=False` 關掉它
+每次呼叫噴的 "No network created" log。預設 profile 即用;**profile 調校（temperley/krumhansl vs
+EDM 的 edma/bgate）留待在 pop gold 上做**——不在這份 EDM 集上選（會選出 EDM-best 誤導 pop）。
+已知:Essentia 在**短片段**會選關係小調（75s chidori 片段 → Cm,全曲 → E♭),render 餵全曲故顯示 E♭。
+
 ---
 
 ## 1. Drop-in 開源工具比較

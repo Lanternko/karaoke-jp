@@ -397,17 +397,72 @@ def _audio_pcp(path: str):
     return pcp / pcp.sum()
 
 
-def _detect_key(notes, audio_path: str | None = None) -> dict:
-    """Best-correlation K-S key guess over all 24 keys.
+_PC_NAME = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
-    Prefers the accompaniment evidence: a peak-PCP of the render audio (the
-    mix is instrumental-dominated). Melody-only K-S falls for the dominant on
-    melodies that camp on the 5th (chidori: melody says B♭, harmony's A♭ says
-    E♭ -- the professor-validated key). Falls back to duration-weighted melody
-    pitch classes when the audio isn't readable. Returns top-3 with scores for
-    honest logging, plus the winner's spelling convention (sharps/flats).
+
+def _name_to_pc(name: str):
+    """'Eb' / 'E♭' / 'F#' / 'F♯' -> pitch-class int (None if unparseable)."""
+    name = name.strip().replace("♭", "b").replace("♯", "#")
+    if not name or name[0] not in _PC_NAME:
+        return None
+    pc = _PC_NAME[name[0]]
+    for ch in name[1:]:
+        pc += 1 if ch == "#" else -1 if ch == "b" else 0
+    return pc % 12
+
+
+def _key_display(tonic: int, mode: str):
+    """(tonic_pc, 'major'|'minor') -> (display name, use_flats) in our spelling."""
+    rel_major = tonic if mode == "major" else (tonic + 3) % 12
+    flats = rel_major in _FLAT_MAJOR_PCS
+    names = _NOTE_NAMES_FLAT if flats else _NOTE_NAMES
+    return names[tonic] + ("m" if mode == "minor" else ""), flats
+
+
+def _detect_key_essentia(path: str):
+    """Essentia KeyExtractor (HPCP + key template) -- the v14 primary detector.
+
+    On the GiantSteps external benchmark (101 tracks) Essentia scored 0.717
+    MIREX-weighted / 64.4% exact vs the in-house peak-PCP's 0.546 / 40.6% (and
+    marginally faster), so it is preferred; _detect_key falls back to
+    peak-PCP/melody when essentia is unavailable. We re-spell from the pitch
+    class via _key_display so the HUD sharp/flat convention stays consistent.
+    Returns None on any failure (missing package, unreadable audio).
+    """
+    try:
+        import essentia
+        essentia.log.warningActive = False  # silence per-call "No network" spam
+        essentia.log.infoActive = False
+        import essentia.standard as _es
+        key, scale, strength = _es.KeyExtractor()(
+            _es.MonoLoader(filename=path, sampleRate=44100)())
+    except Exception:
+        return None
+    pc = _name_to_pc(key)
+    if pc is None:
+        return None
+    mode = "minor" if scale.startswith("min") else "major"
+    name, use_flats = _key_display(pc, mode)
+    return {"name": name, "use_flats": use_flats, "corr": float(strength),
+            "source": "essentia", "top": [(name, float(strength))]}
+
+
+def _detect_key(notes, audio_path: str | None = None) -> dict:
+    """Key guess: Essentia KeyExtractor primary, peak-PCP K-S fallback.
+
+    Both read the render audio (instrumental-dominated mix): the accompaniment
+    harmony carries the key, the vocal does not (melody-only K-S falls for the
+    dominant -- chidori melody says B♭, the A♭ in the harmony says E♭, the
+    validated key). If essentia is unavailable we fall back to the in-house
+    peak-PCP, then to duration-weighted melody pitch classes. See
+    docs/key-detection-survey.md.
     """
     import numpy as _np
+
+    if audio_path:
+        res = _detect_key_essentia(audio_path)
+        if res is not None:
+            return res
 
     w = _audio_pcp(audio_path) if audio_path else None
     source = "harmony" if w is not None else "melody"
@@ -427,21 +482,14 @@ def _detect_key(notes, audio_path: str | None = None) -> dict:
             r = float(_np.corrcoef(_np.roll(prof, tonic), w)[0, 1])
             scored.append((r, tonic, mode))
     scored.sort(reverse=True)
-
-    def disp(tonic, mode):
-        rel_major = tonic if mode == "major" else (tonic + 3) % 12
-        flats = rel_major in _FLAT_MAJOR_PCS
-        names = _NOTE_NAMES_FLAT if flats else _NOTE_NAMES
-        return names[tonic] + ("m" if mode == "minor" else ""), flats
-
     r, tonic, mode = scored[0]
-    name, use_flats = disp(tonic, mode)
+    name, use_flats = _key_display(tonic, mode)
     return {
         "name": name,
         "use_flats": use_flats,
         "corr": r,
         "source": source,
-        "top": [(disp(t, m)[0], rr) for rr, t, m in scored[:3]],
+        "top": [(_key_display(t, m)[0], rr) for rr, t, m in scored[:3]],
     }
 
 

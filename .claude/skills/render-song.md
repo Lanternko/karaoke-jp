@@ -84,6 +84,11 @@ Render a karaoke video for a song using the canonical version profile.
    `--hud songinfo` is the v14 info HUD (icon counters + range/key gauge,
    harmony-based key detection); `--hud legacy` restores MID2BAR's old
    cumulative counters, `--hud none` blanks the strip.
+   The key label uses **Essentia** (`pip install essentia` in the render venv —
+   GiantSteps 0.717 vs in-house peak-PCP 0.546). It's in-process and
+   auto-falls back to peak-PCP if essentia is missing, so a fresh setup still
+   renders, just with the weaker detector — install essentia for canonical
+   quality.
 
 8. **Report** the output path and file size. Remind user to ear-test before promoting.
 
