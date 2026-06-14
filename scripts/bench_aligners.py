@@ -18,7 +18,11 @@ import csv, json, statistics, unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SONGS = ["chidori", "haru-hikage", "tuki-zero"]
+# A song is scored only once its human gold tsv exists. tuki-saitei-kaiwai has
+# all 4 model predictions staged (kara.moe-certified clean OOD) and is wired in
+# here, so dropping data/alignment_gold/tuki-saitei-kaiwai.gold.tsv is the only
+# remaining step to add it to the table.
+SONGS = ["chidori", "haru-hikage", "tuki-zero", "tuki-saitei-kaiwai"]
 GOLD = {s: ROOT / f"data/alignment_gold/{s}.gold.tsv" for s in SONGS}
 
 # model -> {song: prediction json}. haru MMS uses the fresh file; the
@@ -28,10 +32,14 @@ MODELS: dict[str, dict[str, str]] = {
         "chidori": "outputs/chidori/aligned_midi.json",
         "haru-hikage": "tmp/haru_mms_fresh.json",
         "tuki-zero": "outputs/tuki-zero/aligned_midi.json",
+        "tuki-saitei-kaiwai": "outputs/tuki-saitei-kaiwai/aligned_midi.json",
     },
     "SOFA zero-shot": {s: f"outputs/{s}/aligned.sofa.json" for s in SONGS},
     "SOFA +island anchor": {s: f"outputs/{s}/aligned.sofa_islands.json" for s in SONGS},
-    "classic (Whisper)": {"tuki-zero": "outputs/tuki-zero/aligned_whisper_backup.json"},
+    "classic (Whisper)": {
+        "tuki-zero": "outputs/tuki-zero/aligned_whisper_backup.json",
+        "tuki-saitei-kaiwai": "outputs/tuki-saitei-kaiwai/aligned_whisper_backup.json",
+    },
 }
 
 
@@ -82,11 +90,15 @@ def score(pred_path: Path, gold: list[dict]) -> dict | None:
 
 def main() -> None:
     pooled = {m: {"s": [], "e": [], "iou": []} for m in MODELS}
+    active = [s for s in SONGS if GOLD[s].exists()]
+    pending = [s for s in SONGS if not GOLD[s].exists()]
+    if pending:
+        print(f"(awaiting human gold, predictions staged but skipped: {', '.join(pending)})\n")
     print("=== Lyric alignment vs HUMAN gold (human-only), per song ===")
     print(f"{'model':22s} {'song':12s} {'n':>3s}  {'start_MAE':>9s} {'st_med':>7s} {'st<=250':>7s} "
           f"{'st<=500':>7s}  {'end_MAE':>8s} {'en<=250':>7s}  {'IoU_med':>7s}")
     for model, mp in MODELS.items():
-        for song in SONGS:
+        for song in active:
             p = mp.get(song)
             if not p or not (ROOT / p).exists():
                 continue
@@ -110,7 +122,7 @@ def main() -> None:
         em, emed = statistics.mean(d["e"]), statistics.median(d["e"])
         s250 = sum(x <= .25 for x in d["s"]) / n
         e250 = sum(x <= .25 for x in d["e"]) / n
-        cov = ",".join(s for s in SONGS if s in MODELS[model])
+        cov = ",".join(s for s in active if s in MODELS[model])
         print(f"{model:22s} {n:>5d}  {sm:>8.3f}s {smed:>6.3f}s {s250:>7.0%}  "
               f"{em:>7.3f}s {emed:>6.3f}s {e250:>7.0%}  {statistics.median(d['iou']):>7.3f}  [{cov}]")
 

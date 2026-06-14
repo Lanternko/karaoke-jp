@@ -75,5 +75,10 @@ OOD;count>0 → 可能在訓練快照裡 → 當 OOD 證據沒意義（與 SOFA�
 對照(已 benchmark):chidori 0、haru 0 = 乾淨;tuki-zero 2 = 可能污染(見 [SOFA RESULTS](../tmp/sofa-ourgold/RESULTS.md)）。
 
 **標註佇列**
-1. ★ **最低界隈**(tuki-saitei-kaiwai)— 6 首中唯一乾淨 OOD,已有 MMS 預測(`outputs/tuki-saitei-kaiwai/aligned_midi.json`);**缺人耳 gold**(待標)。標完即多一個真正 OOD 的 MMS 數據點;要補齊四模型則另需跑 SOFA(zero-shot+island)與 classic。
+1. ★ **最低界隈**(tuki-saitei-kaiwai)— 6 首中唯一乾淨 OOD。**四模型預測已全部 staged**(各 83 行):
+   `aligned_midi.json`(MMS)、`aligned.sofa.json`(SOFA zero-shot)、`aligned.sofa_islands.json`
+   (SOFA island)、`aligned_whisper_backup.json`(classic);`bench_aligners.py` 已接上並加 gold-presence
+   guard(沒 gold 自動跳過)。**唯一缺口 = 人耳 gold**;把 `data/alignment_gold/tuki-saitei-kaiwai.gold.tsv`
+   標好放進去,benchmark 一行指令就出全四模型。
+   （備註:RMS VAD 對它 voiced 99%、分離 bleed 重,SOFA island 錨點預期偏弱——這是該歌的真實屬性。）
 2. 其餘 5 首在 kara.moe → 標了只算 robustness,不算 OOD 證據,擴 OOD 不優先。
