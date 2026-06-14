@@ -53,3 +53,27 @@
 - n 小(3 首/87 行);chidori+haru 是 kara.moe 篩查過的乾淨 OOD,tuki 可能污染。
 - classic 只有 tuki 一首。
 - 同一首歌四個模型用**同一份**人耳 gold、同一計分器,故跨模型可比;跨歌難度不同,pooled 為 micro-average。
+
+## 候選 OOD 篩查（kara.moe）+ 標註佇列 — 2026-06-14
+
+擴 n 的瓶頸:每首歌要進 benchmark,得先有人耳 gold(我的標註集,人耳優先)。現有候選
+（有 MMS 預測、無 gold）先過 kara.moe 污染篩查,決定值不值得花人力標。
+
+方法:`GET https://kara.moe/api/karas/search?filter=<曲名>&size=5` → 讀 `infos.count`。
+kara.moe = MMS 微調源 `karaoke-mugen-timings` 的**公開上界**;count=0 → 庫裡沒有 → 認證乾淨
+OOD;count>0 → 可能在訓練快照裡 → 當 OOD 證據沒意義（與 SOFA「Kiritan 洩題」同型防灌水）。
+
+| slug | 曲名 | 演唱 | kara.moe count | OOD 判定 |
+|---|---|---|---|---|
+| tuki-saitei-kaiwai | 最低界隈 | tuki. | **0** | ✅ 乾淨 OOD |
+| aina-kakumei | 革命道中 | アイナ・ジ・エンド | 1（Dandadan OP2） | ❌ 可能污染 |
+| kuzurinen | クズリ念 | ずっと真夜中でいいのに。 | 1（やにすう OP） | ❌ 可能污染 |
+| byoushinwo-kamu | 秒針を噛む | ずっと真夜中でいいのに。 | 2 | ❌ 可能污染 |
+| bocchi-guitar | ギターと孤独と蒼い惑星 | 結束バンド | 3 | ❌ 可能污染 |
+| night-dancer | NIGHT DANCER | imase | cover 在庫 | ❌ 可能污染 |
+
+對照(已 benchmark):chidori 0、haru 0 = 乾淨;tuki-zero 2 = 可能污染(見 [SOFA RESULTS](../tmp/sofa-ourgold/RESULTS.md)）。
+
+**標註佇列**
+1. ★ **最低界隈**(tuki-saitei-kaiwai)— 6 首中唯一乾淨 OOD,已有 MMS 預測(`outputs/tuki-saitei-kaiwai/aligned_midi.json`);**缺人耳 gold**(待標)。標完即多一個真正 OOD 的 MMS 數據點;要補齊四模型則另需跑 SOFA(zero-shot+island)與 classic。
+2. 其餘 5 首在 kara.moe → 標了只算 robustness,不算 OOD 證據,擴 OOD 不優先。
