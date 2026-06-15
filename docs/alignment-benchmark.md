@@ -82,3 +82,23 @@ OOD;count>0 → 可能在訓練快照裡 → 當 OOD 證據沒意義（與 SOFA�
    標好放進去,benchmark 一行指令就出全四模型。
    （備註:RMS VAD 對它 voiced 99%、分離 bleed 重,SOFA island 錨點預期偏弱——這是該歌的真實屬性。）
 2. 其餘 5 首在 kara.moe → 標了只算 robustness,不算 OOD 證據,擴 OOD 不優先。
+
+## 最低界隈 初步結果（DRAFT gold,2026-06-15）
+
+Kojek 自由打點標了 最低界隈(62 句),用單調 DP 對到 83 行 → 43 human / 40 split 的 draft gold。
+**這是第一首打爆 MMS 的歌。**
+
+| 模型 | start MAE | st median | st≤250ms | end MAE |
+|---|---|---|---|---|
+| MMS-JA | 1.542s | 0.661s | 16% | 1.331s |
+| SOFA zero-shot | 6.234s | 0.496s | 26% | 1.397s |
+| **SOFA +island** | **1.105s** | **0.244s** | **51%** | 1.171s |
+| classic | 1.483s | 0.455s | 9% | 1.315s |
+
+- **MMS 從 30–45ms(chidori/haru/tuki)崩到 1.54s,史上第一次輸 SOFA+island。** 第二副歌 forced-align
+  完全脫軌:`aligned_midi.json` 出現一行 19.7s、5 行擠進 0.87s、一行 10.5s(raw 證據,與標註精度無關)。
+- 分段 start median:前段 0.52s、中段 0.66s、**第二副歌 5.37s(真崩潰)**。
+
+**Caveat / 進行中**:此 gold 是自由打點(~0.5s 反應延遲地板),sub-second 精度不可信(中崩潰段是鐵的)。
+Kojek 正在**逐行重標求精度(option B)**;完成後重建 gold + 重跑即取代本節數字。draft gold/markers/recipe
+存於私有 `gold/tuki-saitei-kaiwai/`,接力見 `gold/docs/handoff-2026-06-15.md`。
