@@ -11,3 +11,8 @@ kiritan/vocals/
 kiritan/f0/
 kiritan/wav_all/
 *.wav
+itako/rosvot_out/
+itako/itako_gt_raw.json
+itako/f0/
+mir-st500/pretrained_models/
+*.wav.bak

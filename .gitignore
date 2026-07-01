@@ -102,3 +102,14 @@ benchmarks/**/rosvot_pred.json
 
 # Claude Code local runtime
 .claude/scheduled_tasks.lock
+
+# romaji.txt is the romanized answer-key of the same copyrighted lyrics, and
+# backing.json quotes verbatim 〈…〉 echo lines — same privacy class as
+# lyrics.txt: local + private repo only. (night-dancer/romaji.txt predates
+# this rule; scheduled for the Tier-2 history cleanup.)
+songs/*/romaji.txt
+songs/*/backing.json
+
+# Whale's background is the copyrighted album art (user-supplied) — the
+# !background.png allowance is only for original / pure-background images.
+songs/whale/background.png
