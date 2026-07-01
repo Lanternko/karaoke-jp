@@ -1,0 +1,10 @@
+[
+  {
+    "drop_notes": [189.8, 190.6],
+    "note": "Per-song portrait cleanup: post-line tail begins after the aligned end of 大事な and otherwise causes the same display row to bridge the following 16-second instrumental gap."
+  },
+  {
+    "drop_notes": [190.8, 191.5],
+    "note": "Per-song portrait cleanup: isolated GAME note in the 16-second instrumental gap between 大事な and 雷雨だと. No lyric or neighboring voiced note supports it."
+  }
+]
