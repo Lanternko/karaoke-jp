@@ -340,9 +340,19 @@ def apply_reentry_guard(lines: list[dict], segments_path: str | Path, *,
 @click.option("--f0", "f0_npz_path", type=click.Path(exists=True, dir_okay=False),
               default=None, help="rmvpe_f0.npz; F0-voicing re-entry guard for "
               "post-interlude lines (haru line-29 family).")
+@click.option("--star/--no-star", default=False, show_default=True,
+              help="Two-pass: insert a <star> absorber before lines that follow "
+              "an interlude > --star-gap-min (survey C). Absorbs audio only; "
+              "does not decide the entry point.")
+@click.option("--star-gap-min", default=8.0, show_default=True,
+              help="Inter-line silence (s) that counts as an interlude.")
+@click.option("--star-score", default=0.0, show_default=True,
+              help="<star> log-prob per frame (0 = prob 1, match-anything). "
+              "Lower it if the star over-absorbs the re-entry onset.")
 def main(vocals: str, aligned_path: str | None, tokens_path: str | None,
          out_path: str, model_id: str, device: str, chunk_seconds: float,
-         rms_segments_path: str | None, f0_npz_path: str | None) -> None:
+         rms_segments_path: str | None, f0_npz_path: str | None,
+         star: bool, star_gap_min: float, star_score: float) -> None:
     import torch
     import torchaudio
     from transformers import AutoProcessor, Wav2Vec2ForCTC
@@ -365,8 +375,10 @@ def main(vocals: str, aligned_path: str | None, tokens_path: str | None,
 
     words: list[str] = []
     letters_per_record: list[list[int]] = []
+    line_first_word: list[int] = []  # words-index where each line's words begin
     offset_letters = 0
     for recs in per_line_records:
+        line_first_word.append(len(words))
         for r in recs:
             if "kana_romaji_override" in r:
                 r["kana"] = {"wa": "わ", "e": "え"}[r["kana_romaji_override"]]
@@ -381,18 +393,6 @@ def main(vocals: str, aligned_path: str | None, tokens_path: str | None,
     vocab = processor.tokenizer.get_vocab()
     blank_id = processor.tokenizer.pad_token_id
     sep_id = vocab["|"]
-
-    targets: list[int] = []
-    target_letter_pos: list[int] = []
-    lp = 0
-    for wi, word in enumerate(words):
-        if wi > 0:
-            targets.append(sep_id)
-            target_letter_pos.append(-1)
-        for ch in word:
-            targets.append(vocab[ch])
-            target_letter_pos.append(lp)
-            lp += 1
 
     import soundfile as sf
 
@@ -409,47 +409,91 @@ def main(vocals: str, aligned_path: str | None, tokens_path: str | None,
             logits = model(inp).logits
             emissions.append(torch.log_softmax(logits, dim=-1).cpu())
     emission = torch.cat(emissions, dim=1)
-
     ratio = wave.shape[-1] / emission.shape[1] / sr
-    tgt = torch.tensor([targets], dtype=torch.int32)
-    path, scores = torchaudio.functional.forced_align(emission, tgt, blank=blank_id)
-    spans = torchaudio.functional.merge_tokens(path[0], scores[0], blank=blank_id)
+    star_id = emission.shape[-1]  # extra "match-anything" column appended on demand
 
-    letter_times: dict[int, tuple[float, float]] = {}
-    si = 0
-    for ti, lpos in enumerate(target_letter_pos):
-        while si < len(spans) and spans[si].token != targets[ti]:
+    def build_targets(star_before: set[int]):
+        """Flatten words -> CTC target ids, inserting a <star> before each word
+        index in `star_before` (a long-interlude absorber). Letter positions
+        index the same global letter space as letters_per_record."""
+        targets: list[int] = []
+        tlp: list[int] = []
+        lp = 0
+        for wi, word in enumerate(words):
+            if wi in star_before:
+                targets.append(star_id); tlp.append(-1)
+                targets.append(sep_id); tlp.append(-1)
+            elif wi > 0:
+                targets.append(sep_id); tlp.append(-1)
+            for ch in word:
+                targets.append(vocab[ch]); tlp.append(lp); lp += 1
+        return targets, tlp
+
+    def align_to_spans(emiss, targets, tlp):
+        tgt = torch.tensor([targets], dtype=torch.int32)
+        path, sc = torchaudio.functional.forced_align(emiss, tgt, blank=blank_id)
+        spans = torchaudio.functional.merge_tokens(path[0], sc[0], blank=blank_id)
+        letter_times: dict[int, tuple[float, float]] = {}
+        si = 0
+        for ti, lpos in enumerate(tlp):
+            while si < len(spans) and spans[si].token != targets[ti]:
+                si += 1
+            if si >= len(spans):
+                break
+            if lpos >= 0:
+                letter_times[lpos] = (spans[si].start * ratio, spans[si].end * ratio)
             si += 1
-        if si >= len(spans):
-            break
-        if lpos >= 0:
-            letter_times[lpos] = (spans[si].start * ratio, spans[si].end * ratio)
-        si += 1
+        rec_spans: list[tuple[float, float] | None] = []
+        for lst in letters_per_record:
+            ts = [letter_times[p] for p in lst if p in letter_times]
+            rec_spans.append((min(t[0] for t in ts), max(t[1] for t in ts)) if ts else None)
+        for i, sp in enumerate(rec_spans):
+            if sp is None:
+                pe = next((rec_spans[j][1] for j in range(i - 1, -1, -1) if rec_spans[j]), 0.0)
+                ns = next((rec_spans[j][0] for j in range(i + 1, len(rec_spans)) if rec_spans[j]), pe)
+                rec_spans[i] = (pe, max(pe, ns))
+        return rec_spans
 
-    rec_spans: list[tuple[float, float] | None] = []
-    for lst in letters_per_record:
-        ts = [letter_times[p] for p in lst if p in letter_times]
-        rec_spans.append((min(t[0] for t in ts), max(t[1] for t in ts)) if ts else None)
-    for i, sp in enumerate(rec_spans):
-        if sp is None:
-            prev_end = next((rec_spans[j][1] for j in range(i - 1, -1, -1) if rec_spans[j]), 0.0)
-            nxt_start = next((rec_spans[j][0] for j in range(i + 1, len(rec_spans)) if rec_spans[j]), prev_end)
-            rec_spans[i] = (prev_end, max(prev_end, nxt_start))
-
-    idx = 0
-    updated = 0
-    for recs, line in zip(per_line_records, lines):
-        n = len(recs)
-        if n == 0:
+    def writeback(rec_spans):
+        idx = 0
+        n_lines = 0
+        for recs, line in zip(per_line_records, lines):
+            n = len(recs)
+            if n == 0:
+                continue
+            _writeback_char_timings(recs, rec_spans[idx:idx + n])
             idx += n
-            continue
-        spans_line = rec_spans[idx:idx + n]
-        idx += n
-        _writeback_char_timings(recs, spans_line)
-        for tok in line.get("tokens", []):
-            _retime_unsung_chars(tok.get("chars", []))
-        updated += 1
-    _retime_lines_after_char_update(lines)
+            for tok in line.get("tokens", []):
+                _retime_unsung_chars(tok.get("chars", []))
+            n_lines += 1
+        _retime_lines_after_char_update(lines)
+        return n_lines
+
+    # Pass 1: plain whole-song alignment (no star).
+    targets, target_letter_pos = build_targets(set())
+    updated = writeback(align_to_spans(emission, targets, target_letter_pos))
+
+    # Pass 2 (optional, survey C): insert a <star> before each line that follows
+    # a long interlude, so the silent/instrumental gap is absorbed by the star
+    # instead of dragging the re-entry onset. Gap positions are only known after
+    # pass 1, hence two-pass. The star ABSORBS audio only; it never *decides* the
+    # entry point (that stays CTC phonetic evidence), so this is NOT the rejected
+    # F0 re-entry guard (which snapped onsets to an F0/breath voicing onset).
+    stars = 0
+    if star and len(lines) > 1:
+        star_before: set[int] = set()
+        prev_end = lines[0]["end"]
+        for i in range(1, len(lines)):
+            if per_line_records[i] and (lines[i]["start"] - prev_end) > star_gap_min:
+                star_before.add(line_first_word[i])
+            prev_end = lines[i]["end"]
+        if star_before:
+            star_col = torch.full((emission.shape[0], emission.shape[1], 1),
+                                  float(star_score), dtype=emission.dtype)
+            emission_star = torch.cat((emission, star_col), dim=2)
+            targets, target_letter_pos = build_targets(star_before)
+            updated = writeback(align_to_spans(emission_star, targets, target_letter_pos))
+            stars = len(star_before)
 
     guarded = 0
     if f0_npz_path:
@@ -460,7 +504,7 @@ def main(vocals: str, aligned_path: str | None, tokens_path: str | None,
     Path(out_path).write_text(json.dumps(lines, ensure_ascii=False, indent=1), encoding="utf-8")
     click.echo(f"[mms-align] {updated}/{len(lines)} lines retimed, "
                f"{len(words)} words / {len(targets)} targets, "
-               f"reentry-guard moved {guarded}, "
+               f"stars={stars}, reentry-guard moved {guarded}, "
                f"emission {emission.shape[1]} frames @ {ratio*1000:.1f}ms -> {out_path}")
 
 

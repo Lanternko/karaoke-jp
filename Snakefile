@@ -39,18 +39,56 @@ TIMING_SOURCE = os.environ.get("TIMING_SOURCE", "mms")
 if TIMING_SOURCE not in {"mms", "classic"}:
     raise ValueError(f"TIMING_SOURCE must be mms|classic, got {TIMING_SOURCE!r}")
 
+import json as _json
+
+
+def _load_canonical_profile():
+    """Single source of truth: render/timing/pitch params come from the
+    canonical version profile in config/versions.json (the /render-song skill
+    reads the same file). This closes the Snakefile-vs-skill drift where the
+    Snakefile rendered the legacy octavefix classic chain at vocal_ratio 0.30,
+    while the documented + ear-accepted canonical (v14) is the GAME display-grid
+    chain at 0.40 with time-warp, flat skin, songinfo HUD and per-song patches.
+    """
+    try:
+        data = _json.loads((Path("config") / "versions.json").read_text())
+        return data["profiles"][data["canonical"]]
+    except (OSError, KeyError, ValueError):
+        return {}
+
+
+_PROFILE = _load_canonical_profile()
+_RENDER = _PROFILE.get("render", {})
+
+# Pitch/display chain for the render rule. Canonical = GAME grid since v14:
+#   game    = GAME union -> make_display_grid (warp sidecar) -> render
+#             --time-warp + flat bar skin + songinfo HUD + per-song
+#             pitch-patch / rms-segments. Identical to what /render-song does
+#             and what Kojek ear-accepted (chidori + byoushin).
+#   classic = legacy melody_markers.octavefix.mid straight into render (no
+#             warp / skin / HUD). Kept for songs not yet GAME-validated:
+#             run with PITCH_CHAIN=classic.
+PITCH_CHAIN = os.environ.get("PITCH_CHAIN", "game")
+if PITCH_CHAIN not in {"game", "classic"}:
+    raise ValueError(f"PITCH_CHAIN must be game|classic, got {PITCH_CHAIN!r}")
+
+GAME_LANGUAGE = _PROFILE.get("pitch_chain", {}).get("game_language", "ja")
+
 try:
-    VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", "0.30"))
-except ValueError as exc:
+    VOCAL_RATIO = float(os.environ.get("VOCAL_RATIO", _RENDER.get("vocal_ratio", 0.30)))
+except (TypeError, ValueError) as exc:
     raise ValueError("VOCAL_RATIO must be a float in [0, 1].") from exc
 if not (0.0 <= VOCAL_RATIO <= 1.0):
     raise ValueError(f"VOCAL_RATIO must be in [0, 1], got {VOCAL_RATIO}")
 
-# Discover song IDs by scanning songs/<id>/source.* present.
+# Discover song IDs by scanning songs/<id>/source.* present. Skip `_`-prefixed
+# stubs (e.g. songs/_smoketest, which has no lyrics.txt) so a broad target like
+# `rule all` or a rule-name --forcerun doesn't choke the whole DAG on them.
 SONG_IDS = sorted(
     p.parent.name
     for p in SONGS_DIR.glob("*/source.*")
     if p.suffix.lower() in {".wav", ".mp3", ".m4a", ".flac"}
+    and not p.parent.name.startswith("_")
 )
 
 
@@ -78,9 +116,13 @@ LYRICS_PY = str(Path.home() / "venvs" / "karaoke-jp-lyrics" / "bin" / "python")
 RENDER_PY = str(Path.home() / "venvs" / "karaoke-jp-render" / "bin" / "python")
 ALIGN_PY = str(Path.home() / "venvs" / "karaoke-jp-align" / "bin" / "python")
 RMVPE_CKPT = str(Path("third_party") / "SOME" / "pretrained" / "rmvpe" / "model.pt")
-LRC_BLOCK_SIZE = 2  # 2 phrases per lyric block → MID2BAR alternates row 2/3 (上下)
-QUARTERS_PER_PAGE = 10  # bar-display fixed scale: 10 quarter notes per page → narrower pitch bars
+LRC_BLOCK_SIZE = int(_RENDER.get("lrc_block_size", 2))  # phrases/block → MID2BAR row 2/3 alternation
+# Classic-chain marker page width (add_midi_markers, integer). Distinct from the
+# display-grid quarters_per_page (16, make_display_grid's own default) — do not
+# wire this to the v14 display_grid profile value; midi_markers needs an int.
+QUARTERS_PER_PAGE = 10
 MID2BAR_APP_SETTINGS = str(Path("config") / "mid2bar_settings.json")
+ASSETS_FLAT = str(Path("render_assets") / "assets_flat.json")  # v14 flat bar skin
 
 
 def _nvidia_lib(venv_dir: Path, component: str) -> str:
@@ -399,6 +441,23 @@ rule score_chain:
         f"--out {{output.midi:q}}"
 
 
+def _pitch_patch_arg(wc):
+    """``--pitch-patch overrides/<song>_pitch_patch.json`` if present, else ''.
+    These are ear-verified per-song display fixes (melisma_split / drop_notes /
+    relabel); the canonical render must apply them (survey B3)."""
+    import shlex
+    p = Path("overrides") / f"{wc.song}_pitch_patch.json"
+    return f"--pitch-patch {shlex.quote(str(p))}" if p.exists() else ""
+
+
+def _rms_segments_arg(wc):
+    """``--rms-segments outputs/<song>/rms_segments.json`` if present, else ''.
+    Lets make_display_grid gate out instrumental-break bleed notes."""
+    import shlex
+    p = OUT_DIR / wc.song / "rms_segments.json"
+    return f"--rms-segments {shlex.quote(str(p))}" if p.exists() else ""
+
+
 rule game_chain:
     """GAME-backbone melody (validated 2026-06-10 on Chidori humangold +
     byoushin; config pinned in scripts/run_game_chain.py):
@@ -417,11 +476,19 @@ rule game_chain:
         bpm=str(OUT_DIR / "{song}" / "melody_quantized.mid.bpm.txt"),
     output:
         midi=str(OUT_DIR / "{song}" / "melody_markers.gamescore.mid"),
+        warp=str(OUT_DIR / "{song}" / "melody_markers.gamescore.warp.json"),
+    params:
+        # Per-song ear-verified display fixes + instrumental-break gating,
+        # forwarded exactly as /render-song does (closes the drift where the
+        # batch chain silently dropped melisma_split / drop_notes / rms gating).
+        pitch_patch=_pitch_patch_arg,
+        rms_segments=_rms_segments_arg,
     shell:
         f"{MAIN_PY} scripts/run_game_chain.py "
         f"--vocals {{input.vocals:q}} --fallback-midi {{input.fallback:q}} "
         f"--f0 {{input.f0:q}} --aligned {{input.aligned:q}} "
-        f"--bpm-file {{input.bpm:q}} --quarters-per-page {QUARTERS_PER_PAGE} "
+        f"--bpm-file {{input.bpm:q}} --language {GAME_LANGUAGE} "
+        f"{{params.pitch_patch}} {{params.rms_segments}} "
         f"--out {{output.midi:q}}"
 
 
@@ -460,26 +527,54 @@ def _background_arg(wc):
     return ""
 
 
-rule render:
-    """M4c/M5: headless MID2BAR render -> karaoke.mp4 (1080p60, h264 + aac).
+if PITCH_CHAIN == "game":
 
-    Uses mixed.wav (instrumental + 30 % guide vocal) as the audio track.
-    Auto-detects ``songs/<song>/background.{mp4,webm,png,jpg,jpeg}`` and
-    feeds it as the rendered backdrop; if absent, the bundled MID2BAR blue
-    gradient is used.
-    """
-    input:
-        audio=str(OUT_DIR / "{song}" / "mixed.wav"),
-        midi=str(OUT_DIR / "{song}" / "melody_markers.octavefix.mid"),
-        lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
-    output:
-        mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),
-    params:
-        bg=_background_arg,
-        app_settings=MID2BAR_APP_SETTINGS,
-    shell:
-        f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
-        f"{RENDER_PY} scripts/render_mp4.py "
-        f"--audio {{input.audio:q}} --midi {{input.midi:q}} "
-        f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} "
-        f"--app-settings {{params.app_settings:q}} {{params.bg}}"
+    rule render:
+        """M4c/M5 CANONICAL (v14): headless MID2BAR render -> karaoke.mp4
+        (1080p60, h264 + aac) via the GAME display-grid chain.
+
+        Mirrors /render-song exactly: GAME-union grid MIDI + piecewise-linear
+        time-warp sidecar + flat bar skin + songinfo HUD, over mixed.wav
+        (vocal_ratio from versions.json). Per-song pitch-patch / rms-segments
+        are applied upstream in rule game_chain.
+        """
+        input:
+            audio=str(OUT_DIR / "{song}" / "mixed.wav"),
+            midi=str(OUT_DIR / "{song}" / "melody_markers.gamescore.mid"),
+            warp=str(OUT_DIR / "{song}" / "melody_markers.gamescore.warp.json"),
+            lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
+        output:
+            mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),
+        params:
+            bg=_background_arg,
+            app_settings=MID2BAR_APP_SETTINGS,
+            assets=ASSETS_FLAT,
+        shell:
+            f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
+            f"{RENDER_PY} scripts/render_mp4.py "
+            f"--audio {{input.audio:q}} --midi {{input.midi:q}} "
+            f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} "
+            f"--app-settings {{params.app_settings:q}} "
+            f"--assets {{params.assets:q}} --hud songinfo "
+            f"--time-warp {{input.warp:q}} {{params.bg}}"
+
+else:
+
+    rule render:
+        """M4c/M5 CLASSIC (legacy, PITCH_CHAIN=classic): octavefix.mid straight
+        into MID2BAR, no warp/skin/HUD. For songs not yet GAME-validated."""
+        input:
+            audio=str(OUT_DIR / "{song}" / "mixed.wav"),
+            midi=str(OUT_DIR / "{song}" / "melody_markers.octavefix.mid"),
+            lrc=str(OUT_DIR / "{song}" / "karaoke.lrc"),
+        output:
+            mp4=str(OUT_DIR / "{song}" / "karaoke.mp4"),
+        params:
+            bg=_background_arg,
+            app_settings=MID2BAR_APP_SETTINGS,
+        shell:
+            f"SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy "
+            f"{RENDER_PY} scripts/render_mp4.py "
+            f"--audio {{input.audio:q}} --midi {{input.midi:q}} "
+            f"--lrc {{input.lrc:q}} --out {{output.mp4:q}} "
+            f"--app-settings {{params.app_settings:q}} {{params.bg}}"

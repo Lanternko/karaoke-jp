@@ -94,3 +94,25 @@ def test_repair_does_not_extend_after_initial_silence() -> None:
 
     assert changes == []
     assert lines[0]["end"] == 1.0
+
+
+def test_decay_mode_extends_at_least_as_far_as_legacy():
+    """Relative-decay (survey B1 Phase-0) must never SHORTEN vs legacy: it only
+    adds frames within decay_db of the local peak, so the tail end is monotone
+    in decay_db (more permissive -> equal or later end, never earlier)."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import line_end_repair as ler
+    import numpy as np
+    hop_s = 0.01
+    # loud note until t=1.0, then a -28 dB sustain decay to t=1.3, then silence
+    rms = np.full(200, -60.0)
+    rms[80:100] = -5.0      # the note (0.8-1.0s)
+    rms[100:130] = -28.0    # decay tail 1.0-1.3s (below 26 dB floor, within 30 of peak)
+    legacy = ler.voiced_tail_end(1.0, 2.0, rms, hop_s, tail_top_db=26.0,
+                                 max_extend=2.0, next_guard=0.25, tail_gap=0.18, decay_db=0.0)
+    decayed = ler.voiced_tail_end(1.0, 2.0, rms, hop_s, tail_top_db=26.0,
+                                  max_extend=2.0, next_guard=0.25, tail_gap=0.18, decay_db=30.0)
+    assert decayed >= legacy            # never shortens
+    assert decayed > 1.0                # follows the -28 dB sustain past the 26 dB floor

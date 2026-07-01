@@ -92,11 +92,19 @@ def voiced_tail_end(
     max_extend: float,
     next_guard: float,
     tail_gap: float,
+    decay_db: float = 0.0,
 ) -> float:
     """Walk the RMS envelope forward from ``cur_end`` and return the time the
     voice actually stops, bounded by the next-line and max-extend guards.
 
     Returns a value >= ``cur_end`` (never shortens a line).
+
+    ``decay_db`` (Phase-0 relative-decay mode, survey B1): when > 0, a frame
+    also counts as voiced if it stays within ``decay_db`` of the note's local
+    peak (measured in the 0.4 s before ``cur_end``). This follows the *singer's
+    natural decay* of a sustained vowel past the strict absolute floor, instead
+    of only chasing a fixed ``-tail_top_db`` threshold — the sustained tail is a
+    relative-loudness phenomenon, not an absolute one.
     """
     n = len(rms_db)
 
@@ -108,6 +116,11 @@ def voiced_tail_end(
         return cur_end
 
     voiced = rms_db > -tail_top_db
+    if decay_db > 0:
+        lo = fidx(cur_end - 0.4)
+        hi = fidx(cur_end)
+        local_peak = float(np.max(rms_db[lo:hi + 1])) if hi >= lo else float(np.max(rms_db))
+        voiced = voiced | (rms_db > local_peak - decay_db)
     i = fidx(cur_end)
     j = fidx(ceil)
     last_voiced: int | None = i if voiced[i] else None
@@ -157,6 +170,7 @@ def repair(
     max_extend: float,
     next_guard: float,
     tail_gap: float,
+    decay_db: float = 0.0,
 ) -> list[tuple[int, float, float]]:
     """Mutate ``lines`` in place; return (line_idx, old_end, new_end) for each
     line actually extended."""
@@ -171,7 +185,7 @@ def repair(
         new_end = voiced_tail_end(
             cur_end, next_start, rms_db, hop_s,
             tail_top_db=tail_top_db, max_extend=max_extend,
-            next_guard=next_guard, tail_gap=tail_gap,
+            next_guard=next_guard, tail_gap=tail_gap, decay_db=decay_db,
         )
         if new_end <= cur_end + 1e-3:
             continue
@@ -201,6 +215,10 @@ def repair(
               help="Stay at least this many seconds before the next line's start.")
 @click.option("--tail-gap", default=0.18, show_default=True,
               help="Tolerate voiced dips up to this long; a longer silence stops the tail.")
+@click.option("--decay-db", default=0.0, show_default=True,
+              help="Phase-0 relative-decay tail (survey B1): also follow frames "
+                   "within this many dB of the note's local peak, capturing the "
+                   "sung sustain decay below the absolute floor. 0 = legacy.")
 def main(
     aligned_path: str,
     vocals_path: str,
@@ -209,6 +227,7 @@ def main(
     max_extend: float,
     next_guard: float,
     tail_gap: float,
+    decay_db: float,
 ) -> None:
     lines = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
 
@@ -223,7 +242,7 @@ def main(
     changes = repair(
         lines, rms_db, hop_s, duration,
         tail_top_db=tail_top_db, max_extend=max_extend,
-        next_guard=next_guard, tail_gap=tail_gap,
+        next_guard=next_guard, tail_gap=tail_gap, decay_db=decay_db,
     )
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)

@@ -80,6 +80,7 @@ benchmark（MIR-ST500 / Kiritan / ROSVOT / phone boundary）全跑完。方法�
 - **不要對 YT karaoke guide 調參或把它當 gold。** 實測它對人耳/sheet 驗證 gold 只有 76.6% exact（F#4×44、B3×22 等家族性錯誤）。也**不要把「guide 與 F0 tracker 一致」當獨立證據** — 兩者被同一種演唱偏差（唱平/しゃくり）同向帶偏，B3 家族 22 顆因此誤判過。信任層級：鋼琴譜/人耳 >> guide ≈ F0。詳見 docs/pitch-benchmark.md。
 - **不要把 GAME 直推原始混音**（chidori 實測 exact .48、八度錯 6.4%，README 的伴奏穩健性宣稱對密伴奏不成立）；**不要對 GAME 輸出套 refine-boundaries / absorb-shakuri**（實測有害 — 它的天然音符邊界比 mora grid 好）；GAME 的 align 模式不要當主旋律來源（強制 mora 切分傷邊界）。
 - **不要重寫 user-lyrics → alignment ground truth 的 glue。已經 wired**：`scripts/run_asr.py --lyrics lyrics.txt` 把開頭當 initial_prompt 偏置 ASR；`scripts/align_lyrics.py` 跑 NW kana alignment 後輸出 `aligned.json`，**文字以 `lyrics.txt` 為準、timing 用 Whisper char ts 後續被 `midi_timing.py` 替換**。GUI 只需要把 user paste 寫進 `songs/<id>/lyrics.txt` 即可。
+- **不要把 romaji 印在成品上，也不要餵給 `--backing`。** `songs/<id>/romaji.txt` 是「讀音答案紙」不是顯示元素：拿去餵 `scripts/romaji_overrides.py --tokens … --romaji … --out overrides/<id>.json --dry-run` 校對 furigana（生僻字/義訓 fugashi 會猜錯，如 響=どよ、東風=こち、地球=ほし），人工複核後寫進 `overrides/<id>.json`（**flat 格式 `{"漢字":"よみ"}`，不是 `{"readings":…}`**）再重 tokenize — 修正同時流進 furigana 顯示與 MMS 對齊（romanized tokens）。`romaji_overrides` 是候選產生器、**必人工複核**：ん／助詞（は・へ・を）／長音邊界會噴 false positive（Whale 誤報 `自分 じぶん→じぶ`，要 reject；`~ unpaired` 只是沒錨到、非錯）。`--backing` 只保留給 call-response 和聲（muroshi 式 〈…〉 echo 行），render-portrait 時無此類和聲就不帶這個 flag。
 
 ## 第一個 test case 怎麼選
 - **Vocaloid 純假名歌詞**最安全（沒 gikun，沒漢字異讀問題）

@@ -17,12 +17,37 @@ Add a new song to the karaoke-jp pipeline.
    
    If user provides a title instead of URL, ask for the URL. Never guess YouTube URLs.
 
-2. **Create lyrics file**: Ask the user to paste the Japanese lyrics. Write them to `songs/<song-id>/lyrics.txt`. Do NOT use ASR/LLM to generate lyrics — the user-provided text is the ground truth.
+2. **Create lyrics + romaji answer-key**:
+   - Write the user's Japanese lyrics verbatim to `songs/<song-id>/lyrics.txt` (one sung
+     phrase per line; blank lines separate stanzas and are ignored by line indexing).
+     Do NOT use ASR/LLM to generate lyrics — the user-provided text is the ground truth.
+   - If the user also supplies a **romanization**, write it to `songs/<song-id>/romaji.txt`,
+     one line per non-blank lyrics.txt line (1:1). **Romaji is a reading-verification
+     answer-key ONLY — it is NEVER rendered on the video.** It records what the singer
+     actually sings, so it disambiguates gikun / rare readings (生僻字) that fugashi
+     guesses wrong. (Do NOT feed it to the renderer's `--backing`; that flag is for
+     call-response backing vocals — see `/render-portrait`.)
 
-3. **Check for reading overrides**: If the song has unusual kanji readings (義訓, name readings, etc.), create `overrides/<song-id>.json` with reading corrections. Format:
-   ```json
-   {"readings": {"漢字": "よみかた"}}
+3. **Verify readings against the romaji answer-key** (this is the whole point of romaji):
+   ```bash
+   snakemake --rerun-triggers mtime -j1 outputs/<song-id>/tokens.json   # fugashi readings
+   python scripts/romaji_overrides.py --tokens outputs/<song-id>/tokens.json \
+     --romaji songs/<song-id>/romaji.txt --out overrides/<song-id>.json --dry-run
    ```
+   Read every `+ 漢字: fugashi → romaji` candidate and **human-vet each one** — the
+   romanizer is fuzzy at ん / particle (は・へ・を) / long-vowel boundaries and throws
+   false positives (e.g. Whale flagged `自分 じぶん→じぶ`, which is wrong — reject it).
+   `~ unpaired` lines merely failed to auto-anchor (repeats, ad-libs) and are not errors.
+   Write ONLY vetted corrections, in the **flat** format the existing files use (NOT a
+   `{"readings": …}` wrapper):
+   ```json
+   {"漢字": "よみ", "地球": "ほし"}
+   ```
+   Existing (human) entries always win over auto-extraction. If no romaji was supplied,
+   hand-check unusual kanji (義訓, name readings) the same way. Re-run without `--dry-run`
+   to write the vetted file (or edit it by hand); the pipeline then re-tokenizes with
+   `--override`, so the corrected readings flow into BOTH the furigana display and the
+   MMS forced-alignment (romanized tokens).
 
 4. **Run the Snakemake pipeline** up to `aligned_midi.json`:
    ```bash

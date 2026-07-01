@@ -37,6 +37,7 @@ class GoldRow:
     text: str
     start: float
     end: float
+    source: str = "human"   # human-priority gold tags lines human/machine; --human-only skips machine
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ def read_gold(path: Path) -> list[GoldRow]:
                     text=row["text"],
                     start=float(row["gold_start"]),
                     end=float(row["gold_end"]),
+                    source=(row.get("source") or "human"),
                 )
             )
     return rows
@@ -119,6 +121,29 @@ def metric_block(errors: list[float]) -> dict[str, float]:
         if abs_errors
         else 0.0,
         "bias": statistics.mean(errors) if errors else 0.0,
+    }
+
+
+def span_iou(p_start: float, p_end: float, g_start: float, g_end: float) -> float:
+    """Temporal IoU of two [start,end] spans. Catches 'whole line one beat late':
+    nearest-onset MAE rates a line shifted by ~its own duration as a small error,
+    but IoU collapses to ~0 -- this is the ownership-aware view the survey (D1)
+    says is needed to see interior/line warp that MAE hides."""
+    p_end = max(p_end, p_start)
+    g_end = max(g_end, g_start)
+    inter = max(0.0, min(p_end, g_end) - max(p_start, g_start))
+    union = max(p_end, g_end) - min(p_start, g_start)
+    return inter / union if union > 0 else 0.0
+
+
+def iou_block(ious: list[float]) -> dict[str, float]:
+    if not ious:
+        return {"median": 0.0, "mean": 0.0, "below_0.5": 0.0, "below_0.3": 0.0}
+    return {
+        "median": statistics.median(ious),
+        "mean": statistics.mean(ious),
+        "below_0.5": sum(i < 0.5 for i in ious) / len(ious),
+        "below_0.3": sum(i < 0.3 for i in ious) / len(ious),
     }
 
 
@@ -226,10 +251,14 @@ def evaluate(
         prev_gold = gold
         prev_pred_end = pred_end
 
+    line_ious = [
+        span_iou(r.pred_start, r.pred_end, r.gold_start, r.gold_end) for r in rows
+    ]
     summary = {
         "n": len(rows),
         "start": metric_block([r.signed_start_error for r in rows]),
         "end": metric_block([r.signed_end_error for r in rows]),
+        "line_iou": iou_block(line_ious),
         "stress_n": sum(r.is_stress for r in rows),
         "invariants": invariants(lines),
     }
@@ -291,6 +320,11 @@ def print_summary(summary: dict) -> None:
             f"within_500ms={block['within_500ms']:.1%} "
             f"bias={block['bias']:+.3f}s"
         )
+    iou = summary["line_iou"]
+    print(
+        f"line_IoU median={iou['median']:.3f} mean={iou['mean']:.3f} "
+        f"below_0.5={iou['below_0.5']:.1%} below_0.3={iou['below_0.3']:.1%}"
+    )
     inv = summary["invariants"]
     print(
         "invalids="
@@ -312,6 +346,8 @@ def print_summary(summary: dict) -> None:
 @click.option("--json-out", type=click.Path(dir_okay=False), default=None)
 @click.option("--stress-error-threshold", default=0.5, show_default=True)
 @click.option("--stress-gap-threshold", default=0.25, show_default=True)
+@click.option("--human-only", is_flag=True,
+              help="evaluate only source=human lines (skip machine-filled lines in a human-priority gold)")
 def main(
     gold_path: str,
     aligned_path: str,
@@ -320,11 +356,18 @@ def main(
     json_out: str | None,
     stress_error_threshold: float,
     stress_gap_threshold: float,
+    human_only: bool,
 ) -> None:
     lines = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
+    gold_rows = read_gold(Path(gold_path))
+    if human_only:
+        kept = [g for g in gold_rows if g.source != "machine"]
+        print(f"[human-only] {len(kept)}/{len(gold_rows)} lines evaluated "
+              f"(skipped {len(gold_rows) - len(kept)} machine-filled)")
+        gold_rows = kept
     summary, rows = evaluate(
         lines,
-        read_gold(Path(gold_path)),
+        gold_rows,
         stress_error_threshold=stress_error_threshold,
         stress_gap_threshold=stress_gap_threshold,
     )
