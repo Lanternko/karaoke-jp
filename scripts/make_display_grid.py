@@ -155,8 +155,117 @@ def apply_pitch_patch(
     return sorted(tuple(n) for n in out), applied, missed
 
 
-def line_starts_from_aligned(aligned_path: str | Path) -> list[float]:
-    aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
+# Keys this module knows how to apply to the NOTE grid. Anything else in a
+# per-song pitch-patch is reported by main() so corrections never get silently
+# dropped on the horizontal path again (survey B3 / 2026-06-14).
+KNOWN_PATCH_KEYS = {"at", "melisma_split", "drop_notes"}
+# lyric_retime / lyric_recut live on the lyric-wipe layer (karaoke.lrc), not
+# the note grid; the horizontal path fixes the same smear at its root via the
+# MMS star-token re-entry handling, so they are recognized-but-not-applied
+# here (not "unknown"). "chars" is lyric_recut's payload.
+LYRIC_LAYER_PATCH_KEYS = {"lyric_retime", "lyric_recut", "chars"}
+# Free-text annotation keys carried alongside the real patch directives.
+_PATCH_META_KEYS = {"note", "comment", "reason", "from", "pitch", "start", "end",
+                    "into", "to"}
+
+
+def apply_melisma_splits(
+    notes: list[Note], patches: list[dict], *, eps: float = 1e-3,
+) -> tuple[list[Note], int]:
+    """Replace a GAME-merged melisma with hand-authored sub-notes.
+
+    GAME segments acoustically, so a long-vowel melisma sung as several
+    distinct pitches on ONE mora collapses to a single sustained note. An
+    override {"melisma_split":[lo,hi],"into":[[s,e,pitch],...]} replaces every
+    note fully inside [lo,hi] with the listed sub-notes. Display-layer only,
+    ear-confirmed per song. (Shared with make_portrait_grid; lives here so the
+    canonical horizontal grid applies it too -- survey B3.)
+    """
+    splits = [p for p in patches if "melisma_split" in p]
+    if not splits:
+        return notes, 0
+    out = list(notes)
+    applied = 0
+    for sp in splits:
+        lo, hi = (float(x) for x in sp["melisma_split"])
+        kept = [n for n in out if not (n[0] >= lo - eps and n[1] <= hi + eps)]
+        if len(kept) == len(out):
+            continue  # nothing matched the window
+        for s, e, pitch in sp["into"]:
+            kept.append((float(s), float(e), int(pitch)))
+        out = sorted(kept)
+        applied += 1
+    return out, applied
+
+
+def apply_note_drops(
+    notes: list[Note], patches: list[dict],
+) -> tuple[list[Note], int]:
+    """Hand removal of display notes in explicit time ranges (last resort when
+    the automated chain garbles a passage). {"drop_notes":[lo,hi]} drops every
+    note whose onset is in [lo,hi]. (Shared with make_portrait_grid.)"""
+    ranges = [p["drop_notes"] for p in patches if "drop_notes" in p]
+    if not ranges:
+        return notes, 0
+    out: list[Note] = []
+    dropped = 0
+    for n in notes:
+        if any(float(lo) <= n[0] <= float(hi) for lo, hi in ranges):
+            dropped += 1
+            continue
+        out.append(n)
+    return out, dropped
+
+
+def unknown_patch_keys(patches: list[dict]) -> set[str]:
+    """Patch directive keys this pipeline neither applies nor knowingly defers
+    -- a typo or a new portrait-only key that would silently no-op."""
+    known = KNOWN_PATCH_KEYS | LYRIC_LAYER_PATCH_KEYS | _PATCH_META_KEYS
+    seen: set[str] = set()
+    for p in patches:
+        seen |= set(p.keys())
+    return seen - known
+
+
+def _char_windows(aligned: list[dict], *, pad: float = 0.35) -> list[tuple[float, float]]:
+    """Merged windows around every MMS char — direct sung-voice evidence.
+
+    The RMS VAD misses soft/breathy passages (night-dancer's Tu-tu-lu hook),
+    but the CTC aligner heard every char there. Union-ing these windows with
+    the RMS-voiced windows keeps the interlude ghost-note protection (no chars
+    in an interlude) without killing softly sung notes (survey F2 — the
+    horizontal grid used to INTERSECT with RMS only, cutting the soft hook).
+    Shared with make_portrait_grid.
+    """
+    spans = sorted(
+        (ch["start"] - pad, ch["end"] + pad)
+        for line in aligned for tok in (line.get("tokens") or [])
+        for ch in tok.get("chars", []) if ch["end"] >= ch["start"])
+    merged: list[tuple[float, float]] = []
+    for s, e in spans:
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def _union_windows(a: list[tuple[float, float]],
+                   b: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    merged: list[tuple[float, float]] = []
+    for s, e in sorted(a + b):
+        if merged and s <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        else:
+            merged.append((s, e))
+    return merged
+
+
+def line_starts_from_aligned(aligned_path: str | Path | list) -> list[float]:
+    if isinstance(aligned_path, list):
+        aligned = aligned_path
+    else:
+        aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
     starts = []
     for line in aligned:
         if not line.get("tokens"):
@@ -391,7 +500,15 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
         windows = _lyric_windows(aligned_path, margin=note_window_margin,
                                  tail_allowance=note_tail_allowance)
         if rms_segments_path:
-            windows = _intersect_windows(windows, _voiced_windows(rms_segments_path))
+            # gate to lyric windows ∩ (RMS voiced ∪ MMS char evidence). The bare
+            # RMS intersection (pre-2026-06-14) cut softly-sung passages the VAD
+            # misses but the CTC aligner heard (night-dancer Tu-tu-lu) -- survey
+            # F2. The char-evidence union keeps interlude ghost protection (no
+            # chars in an interlude) while sparing the soft hook.
+            aligned_data = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
+            voiced = _union_windows(_voiced_windows(rms_segments_path),
+                                    _char_windows(aligned_data))
+            windows = _intersect_windows(windows, voiced)
         notes = [n for n in notes
                  if any(ws <= n[0] < we for ws, we in windows)
                  or any(n[0] < we and n[1] > ws for ws, we in windows)]
@@ -400,12 +517,20 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
     notes, dropped = drop_fragments(notes, min_note=min_note)
     notes, wiggles = absorb_wiggles(notes)
 
-    patched = 0
+    patched = melisma = hand_dropped = 0
     if pitch_patch_path:
         patches = json.loads(Path(pitch_patch_path).read_text(encoding="utf-8"))
         notes, patched, missed = apply_pitch_patch(notes, patches)
         for t in missed:
             click.echo(f"[display-grid] WARNING: pitch patch at {t:.2f}s matched no note")
+        # Hand corrections that the horizontal grid used to drop silently
+        # (survey B3): melisma split + note drops now apply here too.
+        notes, melisma = apply_melisma_splits(notes, patches)
+        notes, hand_dropped = apply_note_drops(notes, patches)
+        unknown = unknown_patch_keys(patches)
+        if unknown:
+            click.echo(f"[display-grid] WARNING: unrecognized pitch-patch keys "
+                       f"{sorted(unknown)} -- not applied (typo or new key?)")
 
     qnotes = quantize(notes, quarter=quarter)  # display widths; real times kept in `notes`
     line_of = assign_lines(notes, line_starts)
@@ -492,7 +617,8 @@ def main(midi_path, bpm_file, out_midi, out_warp, quarters_per_page,
     overlaps = sum(1 for a, b in zip(disp_notes, disp_notes[1:]) if b[0] < a[1] - 1e-6)
     click.echo(f"[display-grid] notes={len(disp_notes)} pages={len(pages)} "
                f"dropped_fragments={dropped} wiggles_absorbed={wiggles} "
-               f"pitch_patched={patched} overlaps={overlaps} "
+               f"pitch_patched={patched} melisma_split={melisma} "
+               f"hand_dropped={hand_dropped} overlaps={overlaps} "
                f"page_span={span:.2f}s quarter={quarter:.3f}s")
 
 

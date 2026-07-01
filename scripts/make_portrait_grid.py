@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "src"))
 
 import make_display_grid as mdg  # noqa: E402
+import note_cleanup as nc  # noqa: E402
 from karaoke_jp.lrc_export import split_furigana  # noqa: E402
 from karaoke_jp.midi_markers import (  # noqa: E402
     _intersect_windows,
@@ -39,25 +40,8 @@ from karaoke_jp.score_melody import read_midi_notes  # noqa: E402
 Note = tuple[float, float, int]
 
 
-def _char_windows(aligned: list[dict], *, pad: float = 0.35) -> list[tuple[float, float]]:
-    """Merged windows around every MMS char — direct sung-voice evidence.
-
-    The RMS VAD misses soft/breathy passages (night-dancer's Tu-tu-lu hook),
-    but the CTC aligner heard every char there. Union-ing these windows with
-    the voiced windows keeps the interlude ghost-note protection (no chars in
-    an interlude) without killing softly sung notes.
-    """
-    spans = sorted(
-        (ch["start"] - pad, ch["end"] + pad)
-        for line in aligned for tok in (line.get("tokens") or [])
-        for ch in tok.get("chars", []) if ch["end"] >= ch["start"])
-    merged: list[tuple[float, float]] = []
-    for s, e in spans:
-        if merged and s <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
-        else:
-            merged.append((s, e))
-    return merged
+# _char_windows + _union_windows now live in make_display_grid (mdg) as the
+# single source of truth (used by both grids' RMS∪char gating; survey F2).
 
 
 def drop_isolated_unvoiced(
@@ -100,17 +84,6 @@ def drop_isolated_unvoiced(
             continue
         out.append((s, e, p))
     return out, dropped
-
-
-def _union_windows(a: list[tuple[float, float]],
-                   b: list[tuple[float, float]]) -> list[tuple[float, float]]:
-    merged: list[tuple[float, float]] = []
-    for s, e in sorted(a + b):
-        if merged and s <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
-        else:
-            merged.append((s, e))
-    return merged
 
 
 def unwarp_notes(notes: list[Note], warp_path: str | Path) -> list[Note]:
@@ -172,60 +145,9 @@ def split_notes_at_chars(
     return sorted(out), added
 
 
-def apply_melisma_splits(
-    notes: list[Note], patches: list[dict], *, eps: float = 1e-3,
-) -> tuple[list[Note], int]:
-    """Replace a GAME-merged melisma with hand-authored sub-notes.
-
-    GAME segments acoustically, so a long-vowel melisma sung as several
-    distinct pitches on ONE mora collapses to a single sustained note —
-    split_notes_at_chars can't recover it (no interior char onset on a
-    single mora). An override entry {"melisma_split":[lo,hi],"into":[[s,e,
-    pitch],...]} replaces every note fully inside [lo,hi] with the listed
-    sub-notes. Display-layer only; ear-confirmed per song. Runs AFTER
-    split_notes_at_chars so the mora-sized note is the only thing in-window.
-    """
-    splits = [p for p in patches if "melisma_split" in p]
-    if not splits:
-        return notes, 0
-    out = list(notes)
-    applied = 0
-    for sp in splits:
-        lo, hi = (float(x) for x in sp["melisma_split"])
-        kept = [n for n in out if not (n[0] >= lo - eps and n[1] <= hi + eps)]
-        if len(kept) == len(out):
-            continue  # nothing matched the window; leave a trace via count
-        for s, e, pitch in sp["into"]:
-            kept.append((float(s), float(e), int(pitch)))
-        out = sorted(kept)
-        applied += 1
-    return out, applied
-
-
-def apply_note_drops(
-    notes: list[Note], patches: list[dict],
-) -> tuple[list[Note], int]:
-    """Manual per-song removal of display notes in explicit time ranges.
-
-    Last resort when the automated chain (GAME extraction + alignment)
-    garbles a passage no heuristic cleanly fixes — e.g. night-dancer's first
-    'Tu-tu-lu' chorus, where the aligner smears the line over an instrumental
-    break and GAME leaves a vocal-run tail with no lyric. An override
-    {"drop_notes":[lo,hi]} removes every note whose onset is in [lo,hi].
-    Display-layer, per-song (override file), and explicitly annotated as a
-    hand correction so it's never mistaken for the automated output.
-    """
-    ranges = [p["drop_notes"] for p in patches if "drop_notes" in p]
-    if not ranges:
-        return notes, 0
-    out: list[Note] = []
-    dropped = 0
-    for n in notes:
-        if any(float(lo) <= n[0] <= float(hi) for lo, hi in ranges):
-            dropped += 1
-            continue
-        out.append(n)
-    return out, dropped
+# apply_melisma_splits / apply_note_drops now live in make_display_grid (mdg)
+# as the single source of truth so the canonical horizontal grid applies them
+# too (survey B3). Portrait calls mdg.apply_melisma_splits / mdg.apply_note_drops.
 
 
 # ---- bar lines: one row-group per sentence, greedy to the right edge ----
@@ -393,21 +315,72 @@ def apply_lyric_retime(lines: list[dict], patches: list[dict]) -> int:
     return applied
 
 
-def build_lyric_lines(aligned: list[dict]) -> list[dict]:
+def apply_lyric_recut(lines: list[dict], patches: list[dict]) -> int:
+    """Overwrite a line's per-char wipe times with explicit hand-set values.
+
+    When forced-alignment COLLAPSES a sparse phrase (long instrumental holds
+    between syllables so one mora absorbs seconds and its neighbours get
+    ~0 s), proportional ``lyric_retime`` cannot rescue it — the bad internal
+    ratios survive a rescale. ``lyric_recut`` sets each char's
+    ``[real_start, real_end]`` directly, grounded in the vocals' actual
+    voiced segments. Format (times in seconds, one [start, end] per display
+    char, in order)::
+
+        {"lyric_recut": <line_time_start>, "chars": [[s, e], ...]}
+
+    The line is matched by ``time_start`` (within 0.5 s) and the pair count
+    must equal the line's char count. Display-layer only; aligned_midi.json
+    is untouched.
+    """
+    rc = [p for p in patches if "lyric_recut" in p]
+    applied = 0
+    for sp in rc:
+        target = float(sp["lyric_recut"])
+        times = sp["chars"]
+        for ln in lines:
+            if abs(ln["time_start"] - target) > 0.5:
+                continue
+            cs = ln["chars"]
+            if len(cs) != len(times):
+                raise ValueError(
+                    f"lyric_recut for line @{target}: {len(times)} time pairs "
+                    f"but line {ln.get('text')!r} has {len(cs)} chars")
+            for c, (s, e) in zip(cs, times):
+                c["real_start"], c["real_end"] = float(s), float(e)
+            ln["time_start"], ln["time_end"] = cs[0]["real_start"], cs[-1]["real_end"]
+            applied += 1
+    return applied
+
+
+def build_lyric_lines(
+    aligned: list[dict], backing_map: dict[int, str] | None = None,
+) -> list[dict]:
+    """One lyric line per aligned_midi.json line.
+
+    `backing_map` keys are aligned-line indices (== non-blank lyrics.txt line
+    order); a hit attaches the call-response backing text to that lead line so
+    the renderer can paint it as a dim caption during the lead's sung window.
+    Keyed by the source index (not the emitted index) so a skipped token-less
+    line never shifts the mapping.
+    """
+    backing_map = backing_map or {}
     lines: list[dict] = []
-    for line in aligned:
+    for idx, line in enumerate(aligned):
         if not line.get("tokens"):
             continue
         chars = _extract_line_chars(line)
         if not chars:
             continue
-        lines.append({
+        entry = {
             "row": "A" if len(lines) % 2 == 0 else "B",
             "text": line["text"],
             "chars": chars,
             "time_start": chars[0]["real_start"],
             "time_end": chars[-1]["real_end"],
-        })
+        }
+        if backing_map.get(idx):
+            entry["backing"] = backing_map[idx]
+        lines.append(entry)
     return lines
 
 
@@ -483,12 +456,27 @@ def compute_line_timing(
               type=click.Path(exists=True, dir_okay=False), default=None)
 @click.option("--rms-segments", "rms_segments_path",
               type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--vocals", "vocals_path",
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Separated vocal stem (vocals.wav). With --rmvpe-f0 and "
+                   "--pyin-f0 enables the acoustic note cleanup (octave fixes "
+                   "+ phantom tail/orphan drops in note_cleanup.py).")
+@click.option("--rmvpe-f0", "rmvpe_path",
+              type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--pyin-f0", "pyin_path",
+              type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option("--backing", "backing_path",
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help="Call-response backing JSON ({\"lines\":[{\"line\":i,"
+                   "\"backing\":\"…\"}]}); line = aligned/lyrics.txt line index. "
+                   "Rendered as a dim bottom-strip caption tied to that lead line.")
 @click.option("--out", "out_path", type=click.Path(dir_okay=False), required=True)
 def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
          gap_units, phrase_gap_units, phrase_split_gap, min_note, breath_gap,
          breath_units, pause_gap, pause_units, squeeze_units,
          note_window_margin, note_tail_allowance, lead_max, linger,
-         pitch_patch_path, rms_segments_path, out_path):
+         pitch_patch_path, rms_segments_path, vocals_path, rmvpe_path,
+         pyin_path, backing_path, out_path):
     bpm_2dp = round(float(Path(bpm_file).read_text().strip()), 2)
     quarter = 60.0 / bpm_2dp
     notes: list[Note] = sorted(
@@ -498,13 +486,20 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
 
     aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
 
+    # apply lyric_recut to the aligned SOURCE before anything derives windows
+    # from it: the raw collapsed alignment (whale's 睡 spanning a 10 s
+    # instrumental) otherwise blesses interlude ghost notes through the char
+    # gate, splits notes at bogus onsets and mis-assigns moras.
+    patches: list[dict] = nc.load_patches(pitch_patch_path)
+    recut_src = nc.apply_recut_to_aligned(aligned, patches)
+
     # gate to lyric windows ∩ (RMS voiced ∪ MMS char evidence)
-    windows = _lyric_windows(aligned_path, margin=note_window_margin,
+    windows = _lyric_windows(aligned, margin=note_window_margin,
                              tail_allowance=note_tail_allowance)
     rms_voiced: list[tuple[float, float]] = []
     if rms_segments_path:
         rms_voiced = _voiced_windows(rms_segments_path)
-        voiced = _union_windows(rms_voiced, _char_windows(aligned))
+        voiced = mdg._union_windows(rms_voiced, mdg._char_windows(aligned))
         windows = _intersect_windows(windows, voiced)
     notes = [n for n in notes
              if any(ws <= n[0] < we for ws, we in windows)
@@ -514,14 +509,12 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     if rms_segments_path:
         notes, ghosts = drop_isolated_unvoiced(notes, rms_voiced)
 
-    line_starts = mdg.line_starts_from_aligned(aligned_path)
+    line_starts = mdg.line_starts_from_aligned(aligned)
     notes, dropped = mdg.drop_fragments(notes, min_note=min_note)
     notes, wiggles = mdg.absorb_wiggles(notes)
 
     patched = 0
-    patches: list[dict] = []
-    if pitch_patch_path:
-        patches = json.loads(Path(pitch_patch_path).read_text(encoding="utf-8"))
+    if patches:
         pitch_entries = [p for p in patches if "at" in p]
         notes, patched, missed = mdg.apply_pitch_patch(notes, pitch_entries)
         for t in missed:
@@ -531,13 +524,24 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
     # drop/absorb so the slivers are not folded straight back in).
     notes, mora_split = split_notes_at_chars(notes, aligned)
 
+    # mora-aware cleanup: scoop/shatter merges + acoustically-gated phantom
+    # drops (see note_cleanup.py). Before the hand corrections so an explicit
+    # melisma_split / drop_notes always has the last word.
+    ev = nc.AcousticEvidence.load(vocals_path, rmvpe_path, pyin_path)
+    if not ev and (vocals_path or rmvpe_path or pyin_path):
+        click.echo("[portrait-grid] WARNING: acoustic cleanup needs --vocals, "
+                   "--rmvpe-f0 AND --pyin-f0 — octave/phantom rules skipped")
+    notes, cstats, clog = nc.cleanup(notes, aligned, ev)
+    for msg in clog:
+        click.echo(f"[note-cleanup] {msg}")
+
     # replace a GAME-merged melisma with hand-authored descending sub-notes
     # (single mora -> no char onset to split on). After the char split so the
     # mora-sized note is the only thing inside the override window.
-    notes, melisma = apply_melisma_splits(notes, patches)
+    notes, melisma = mdg.apply_melisma_splits(notes, patches)
 
     # manual per-song removal of garbled passages (annotated in the override)
-    notes, hand_dropped = apply_note_drops(notes, patches)
+    notes, hand_dropped = mdg.apply_note_drops(notes, patches)
 
     qnotes = mdg.quantize(notes, quarter=quarter)
     line_of = mdg.assign_lines(notes, line_starts)
@@ -553,8 +557,17 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
         pause_space=pause_units * quarter,
         squeeze_max=squeeze_units * quarter, quarter=quarter)
 
-    lyric_lines = build_lyric_lines(aligned)
+    backing_map: dict[int, str] = {}
+    if backing_path:
+        bj = json.loads(Path(backing_path).read_text(encoding="utf-8"))
+        for e in bj.get("lines", []):
+            if e.get("backing"):
+                backing_map[int(e["line"])] = e["backing"]
+
+    lyric_lines = build_lyric_lines(aligned, backing_map)
     retimed = apply_lyric_retime(lyric_lines, patches)
+    recut = apply_lyric_recut(lyric_lines, patches)
+    backing_hits = sum(1 for ln in lyric_lines if ln.get("backing"))
 
     compute_line_timing(bar_lines, lead_max=lead_max, linger=linger)
     compute_line_timing(lyric_lines, lead_max=lead_max, linger=linger)
@@ -576,10 +589,17 @@ def main(midi_path, warp_path, bpm_file, aligned_path, quarters_per_row,
 
     click.echo(f"[portrait-grid] bar_lines={len(bar_lines)} "
                f"lyric_lines={len(lyric_lines)} "
+               f"backing={backing_hits}/{len(backing_map)} "
                f"dropped={dropped} wiggles={wiggles} patched={patched} "
                f"mora_split={mora_split} melisma={melisma} ghosts={ghosts} "
-               f"hand_dropped={hand_dropped} lyric_retime={retimed} "
+               f"hand_dropped={hand_dropped} lyric_retime={retimed} recut={recut} "
+               f"recut_src={recut_src} "
+               + " ".join(f"{k}={v}" for k, v in cstats.items()) + " "
                f"pitch=[{pitch_min},{pitch_max}] quarter={quarter:.3f}s")
+    if backing_map and backing_hits < len(backing_map):
+        click.echo(f"[portrait-grid] WARNING: {len(backing_map) - backing_hits} "
+                   f"backing line(s) matched no lyric line — check 'line' indices "
+                   f"in the backing JSON against lyrics.txt order.")
 
 
 if __name__ == "__main__":

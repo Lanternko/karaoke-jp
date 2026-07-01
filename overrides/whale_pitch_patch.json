@@ -1,0 +1,14 @@
+[
+  {"lyric_recut": 231.22,
+   "chars": [
+     [231.32, 232.15],
+     [232.15, 232.96],
+     [232.96, 233.49],
+     [233.49, 233.75],
+     [233.75, 234.35],
+     [234.35, 234.90],
+     [234.90, 235.44],
+     [235.44, 236.50]
+   ],
+   "note": "HAND CORRECTION (display-only). KOJEK EAR-CONFIRMED 2026-07-02: the WHOLE final 白く微睡みながら (L38) is sung 231.3-236.5 s (~14189F) — the song's vocal ends there. Everything later (246.9-251.1 'phrase 2', 251.4+, 252.6/253.1) is accompaniment/hum bleed in the stem that fooled RMVPE (twice) AND pYIN — no lyric, no bars. Char windows are anchored to the L38 note plateaus (60|72,70,69,67,65,65) following the L16 template (93.68-98.38, same melody, 4.7 s: 白=しろ 60+72, く=70, 微睡=まどろ on the 69 plateau split 2:1, み=67, な/が halve the first 65, ら=65 sustain). The first occurrence (L16) aligns fine and is untouched."}
+]

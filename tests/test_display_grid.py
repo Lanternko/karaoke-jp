@@ -276,3 +276,46 @@ def test_pitch_patch_ensure_skips_insert_on_overlap() -> None:
                  "start": 52.36, "end": 52.54}])
     assert applied == 0 and missed == [52.4]
     assert patched == notes
+
+
+# ---------- per-song patch application (survey B3: horizontal grid used to
+# silently drop melisma_split / drop_notes; these guard against re-drift) ----------
+
+def test_apply_melisma_splits_replaces_window() -> None:
+    notes = [(0.0, 1.0, 60), (2.0, 5.0, 67), (6.0, 7.0, 62)]
+    patches = [{"melisma_split": [1.9, 5.1], "into": [[2.0, 3.0, 67],
+                                                      [3.0, 4.0, 65],
+                                                      [4.0, 5.0, 62]]}]
+    out, applied = mdg.apply_melisma_splits(notes, patches)
+    assert applied == 1
+    # the single 67 note in [1.9,5.1] is replaced by three sub-notes
+    assert (2.0, 5.0, 67) not in out
+    assert (2.0, 3.0, 67) in out and (3.0, 4.0, 65) in out and (4.0, 5.0, 62) in out
+    # notes outside the window are untouched
+    assert (0.0, 1.0, 60) in out and (6.0, 7.0, 62) in out
+
+
+def test_apply_note_drops_removes_by_onset() -> None:
+    notes = [(0.0, 1.0, 60), (2.0, 3.0, 67), (4.0, 5.0, 62)]
+    out, dropped = mdg.apply_note_drops(notes, [{"drop_notes": [1.5, 3.5]}])
+    assert dropped == 1
+    assert (2.0, 3.0, 67) not in out
+    assert (0.0, 1.0, 60) in out and (4.0, 5.0, 62) in out
+
+
+def test_unknown_patch_keys_flags_typos_only() -> None:
+    patches = [{"at": 1.0, "pitch": 60, "note": "ok"},
+               {"melisma_split": [1, 2], "into": []},
+               {"drop_notes": [3, 4]},
+               {"lyric_retime": [5, 6], "to": [5, 5.5]},  # lyric-layer, recognized
+               {"bogus_key": 1}]
+    assert mdg.unknown_patch_keys(patches) == {"bogus_key"}
+
+
+def test_char_windows_union_keeps_soft_passage() -> None:
+    # RMS misses a soft window [10,11]; MMS chars heard it -> union keeps it.
+    aligned = [{"tokens": [{"chars": [{"start": 10.0, "end": 11.0}]}]}]
+    rms_voiced = [(0.0, 5.0)]
+    union = mdg._union_windows(rms_voiced, mdg._char_windows(aligned))
+    # soft passage now covered by some window
+    assert any(s <= 10.5 <= e for s, e in union)

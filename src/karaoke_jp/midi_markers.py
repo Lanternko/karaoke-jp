@@ -66,12 +66,17 @@ def _merge_windows(windows: list[tuple[float, float]]) -> list[tuple[float, floa
 
 
 def _lyric_windows(
-    aligned_path: str | Path,
+    aligned_path: str | Path | list,
     *,
     margin: float,
     tail_allowance: float = 0.0,
 ) -> list[tuple[float, float]]:
-    aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
+    # accepts the parsed aligned data directly so callers that patch it
+    # in memory (lyric_recut in make_portrait_grid) gate on the fixed times
+    if isinstance(aligned_path, list):
+        aligned = aligned_path
+    else:
+        aligned = json.loads(Path(aligned_path).read_text(encoding="utf-8"))
     raw: list[tuple[float, float]] = []
     for line in aligned:
         if not line.get("tokens"):

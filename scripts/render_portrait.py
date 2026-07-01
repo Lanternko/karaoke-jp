@@ -46,6 +46,14 @@ LYRIC_A_TOP = 1490
 LYRIC_B_TOP = LYRIC_A_TOP + 150                # 1640
 LYRIC_PANEL = (1440, 1920)
 
+# call-response backing caption: a single dim strip under both lyric rows.
+# The 〈…〉 backing line is overlay-only (no wipe / pitch / forced-align) — it
+# rides the lead line's sung window so the antiphonal feel survives without a
+# second alignment pass fighting the one separated vocal.
+BACKING_TOP = 1792
+BACKING_SIZE = 40
+BACKING_LINGER = 0.8                            # outlive the lead line briefly
+
 BARS_Y = {"A": BARS_A_TOP, "B": BARS_B_TOP}
 LYRIC_Y = {"A": LYRIC_A_TOP, "B": LYRIC_B_TOP}
 
@@ -69,6 +77,7 @@ COL_TEXT_WIPED = (255, 140, 0, 255)
 COL_TEXT_PREVIEW = (150, 150, 150, 230)
 COL_PANEL = (0, 0, 0, 150)
 COL_CURSOR = (255, 255, 255, 220)
+COL_BACKING = (140, 205, 230, 225)             # soft cyan: the other voice
 
 FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 FONT_SIZE = 52
@@ -116,12 +125,28 @@ def _find_visible(lines: list[dict], row: str, t: float) -> dict | None:
 
 
 def _wipe_q(bars: list[dict], t: float) -> float:
-    """Wipe cursor position (in quarter units) at time t."""
+    """Wipe cursor position (in quarter units) at time t.
+
+    Across a rest between two notes the cursor GLIDES at constant real-time
+    speed from the previous bar's right edge to the next bar's left edge,
+    instead of teleporting to the next note the instant the previous one
+    ends. The blank gap stays on screen (bars are not moved) — only the
+    cursor traverses it, over the pause's own duration, so a long musical
+    rest reads as a slow sweep rather than an abrupt jump.
+    """
     if not bars:
         return 0.0
-    for bar in bars:
+    for i, bar in enumerate(bars):
         if t < bar["real_start"]:
-            return bar["x_q"]
+            if i == 0:
+                return bar["x_q"]
+            prev = bars[i - 1]
+            prev_end_x = prev["x_q"] + prev["w_q"]
+            gap_t0, gap_t1 = prev["real_end"], bar["real_start"]
+            if t <= gap_t0:
+                return prev_end_x
+            frac = (t - gap_t0) / max(gap_t1 - gap_t0, 1e-6)
+            return prev_end_x + frac * (bar["x_q"] - prev_end_x)
         if bar["real_start"] <= t <= bar["real_end"]:
             frac = (t - bar["real_start"]) / max(bar["real_end"] - bar["real_start"], 1e-6)
             return bar["x_q"] + frac * bar["w_q"]
@@ -232,6 +257,39 @@ def _draw_lyric_row(frame: Image.Image, draw: ImageDraw.ImageDraw,
         cx += widths[ci] + CHAR_SPACING
 
 
+def _find_active_backing(lines: list[dict], t: float) -> str | None:
+    """Backing text of the lead line being sung at t (latest start wins).
+
+    Only one strip shows at a time; ties to the latest-starting line so a
+    finished line's backing yields to the one now being sung.
+    """
+    best, best_start = None, float("-inf")
+    for ln in lines:
+        b = ln.get("backing")
+        if not b:
+            continue
+        if ln["time_start"] <= t < ln["time_end"] + BACKING_LINGER:
+            if ln["time_start"] >= best_start:
+                best_start, best = ln["time_start"], b
+    return best
+
+
+def _draw_backing(draw: ImageDraw.ImageDraw, text: str) -> None:
+    """Dim, centered call-response caption (〈…〉), auto-fit to the width."""
+    label = f"〈{text}〉"                      # 〈 … 〉
+    usable = W - 2 * MARGIN_X
+    size = BACKING_SIZE
+    while size > 22:
+        font = _load_font(size)
+        bbox = font.getbbox(label)
+        if bbox[2] - bbox[0] <= usable:
+            break
+        size -= 3
+    bbox = font.getbbox(label)
+    draw.text(((W - (bbox[2] - bbox[0])) / 2 - bbox[0], BACKING_TOP),
+              label, fill=COL_BACKING, font=font)
+
+
 def render_frame(frame: Image.Image, grid: dict, t: float) -> None:
     draw = ImageDraw.Draw(frame)
     q_px = (W - 2 * MARGIN_X) / grid["quarters_per_row"]
@@ -246,6 +304,10 @@ def render_frame(frame: Image.Image, grid: dict, t: float) -> None:
         ll = _find_visible(grid["lyric_lines"], row, t)
         if ll:
             _draw_lyric_row(frame, draw, ll, t)
+
+    backing = _find_active_backing(grid["lyric_lines"], t)
+    if backing:
+        _draw_backing(draw, backing)
 
 
 def _detect_content_crop(bg_video: str) -> str:
