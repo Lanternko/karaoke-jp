@@ -1,0 +1,135 @@
+{
+  "_doc": "Holistic benchmark registry. Each entry = one (dataset, system) cell in the unified table.",
+  "datasets": {
+    "kiritan": {
+      "lang": "ja", "n_songs": 50, "condition": "a cappella",
+      "has_note_gt": true, "has_phone_gt": true, "has_word_gt": false, "has_line_gt": false,
+      "note_gt_source": "midi_label (Melodyne-assisted)", "phone_gt_source": "mono_label (HTK)"
+    },
+    "itako": {
+      "lang": "ja", "n_songs": 50, "condition": "a cappella",
+      "has_note_gt": true, "has_phone_gt": true, "has_word_gt": false, "has_line_gt": false,
+      "note_gt_source": "midi_label (musicxml-derived)", "phone_gt_source": "mono_label (HTK)"
+    },
+    "mir-st500": {
+      "lang": "zh", "n_songs": 100, "condition": "separated",
+      "has_note_gt": true, "has_phone_gt": false, "has_word_gt": false, "has_line_gt": false,
+      "note_gt_source": "official note annotation"
+    },
+    "jamendolyrics": {
+      "lang": "en+", "n_songs": 20, "condition": "mixed",
+      "has_note_gt": false, "has_phone_gt": false, "has_word_gt": true, "has_line_gt": false,
+      "word_gt_source": "JamendoLyrics word-level CSV"
+    },
+    "custom-gold": {
+      "lang": "ja", "n_songs": 4, "condition": "separated",
+      "has_note_gt": false, "has_phone_gt": false, "has_word_gt": false, "has_line_gt": true,
+      "line_gt_source": "human-priority gold (87+81 lines)"
+    }
+  },
+  "entries": [
+    {
+      "dataset": "kiritan", "system": "GAME", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "timefix",
+      "eval_file": "kiritan/eval_game_raw_ja.txt",
+      "eval_format": "evaluate_py_txt",
+      "override": {"COn": 0.862, "COnP": 0.644, "COnPOff": 0.502},
+      "note": "defect-corrected GT (transpose+time); raw GT = .793/.531/.400"
+    },
+    {
+      "dataset": "kiritan", "system": "CE+CTC", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "timefix",
+      "override": {"COn": 0.860, "COnP": 0.652, "COnPOff": 0.492},
+      "note": "Mandarin-trained, zero-shot on Japanese a cappella"
+    },
+    {
+      "dataset": "kiritan", "system": "ROSVOT", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "timefix",
+      "override": {"COn": 0.414, "COnP": 0.290, "COnPOff": 0.190},
+      "note": "50->100ms jump = boundary jitter"
+    },
+    {
+      "dataset": "kiritan", "system": "MMS_FA", "condition": "zero-shot",
+      "axis": "alignment", "granularity": "phone", "threshold": 0.05,
+      "eval_file": "kiritan/phone_boundary/eval_mms_fa_ignore_cl.json",
+      "eval_format": "phone_boundary_json"
+    },
+    {
+      "dataset": "kiritan", "system": "MMS-JA", "condition": "zero-shot",
+      "axis": "alignment", "granularity": "phone", "threshold": 0.05,
+      "eval_file": "kiritan/phone_boundary/eval_mms_ja_ignore_cl.json",
+      "eval_format": "phone_boundary_json"
+    },
+    {
+      "dataset": "kiritan", "system": "SOFA", "condition": "contaminated",
+      "axis": "alignment", "granularity": "phone", "threshold": 0.05,
+      "eval_file": "kiritan/phone_boundary_phrase/eval_sofa_ignore_cl.json",
+      "eval_format": "phone_boundary_json",
+      "note": "SOFA JPN v0.0.2b trained on Kiritan — NOT a fair comparison"
+    },
+    {
+      "dataset": "itako", "system": "GAME", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "raw",
+      "override": {"COn": 0.824, "COnP": 0.494, "COnPOff": 0.400},
+      "note": "raw GT (defect-fix only moves +0.008 COn)"
+    },
+    {
+      "dataset": "itako", "system": "CE+CTC", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "raw",
+      "override": {"COn": 0.828, "COnP": 0.509, "COnPOff": 0.374}
+    },
+    {
+      "dataset": "itako", "system": "MMS_FA", "condition": "zero-shot",
+      "axis": "alignment", "granularity": "phone", "threshold": 0.05,
+      "eval_file": "itako/phone_boundary/eval_mms_fa.json",
+      "eval_format": "phone_boundary_json"
+    },
+    {
+      "dataset": "itako", "system": "MMS-JA", "condition": "zero-shot",
+      "axis": "alignment", "granularity": "phone", "threshold": 0.05,
+      "eval_file": "itako/phone_boundary/eval_mms_ja.json",
+      "eval_format": "phone_boundary_json"
+    },
+    {
+      "dataset": "mir-st500", "system": "GAME", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "corrected",
+      "override": {"COn": 0.732, "COnP": 0.655, "COnPOff": 0.411},
+      "note": "N=82 subset (18 dead YouTube links)"
+    },
+    {
+      "dataset": "mir-st500", "system": "CE+CTC", "condition": "in-domain",
+      "axis": "transcription", "gt_variant": "corrected",
+      "override": {"COn": 0.779, "COnP": 0.728, "COnPOff": 0.554},
+      "note": "trained on MIR-ST500 train split, same separator front-end"
+    },
+    {
+      "dataset": "mir-st500", "system": "ROSVOT", "condition": "zero-shot",
+      "axis": "transcription", "gt_variant": "corrected",
+      "override": {"COn": 0.108, "COnP": 0.093, "COnPOff": 0.063},
+      "note": "N=82, no word_durs, RWBD active — collapses without boundaries"
+    },
+    {
+      "dataset": "jamendolyrics", "system": "MMS_FA", "condition": "zero-shot",
+      "axis": "alignment", "granularity": "word", "threshold": 0.3,
+      "override": {"MAE": 0.233, "hit_pct": 0.945},
+      "note": "PCO@0.3s = 94.5%, AAE = 0.233s"
+    },
+    {
+      "dataset": "custom-gold", "system": "MMS-JA", "condition": "canonical",
+      "axis": "alignment", "granularity": "line", "threshold": 0.25,
+      "override": {"MAE": 0.037, "median": 0.031, "hit_pct": 1.0},
+      "note": "pooled 87 human lines (chidori+haru+tuki-zero), start boundary"
+    },
+    {
+      "dataset": "custom-gold", "system": "SOFA+island", "condition": "zero-shot",
+      "axis": "alignment", "granularity": "line", "threshold": 0.25,
+      "override": {"MAE": 0.177, "median": 0.046, "hit_pct": 0.83}
+    },
+    {
+      "dataset": "custom-gold", "system": "classic", "condition": "legacy",
+      "axis": "alignment", "granularity": "line", "threshold": 0.25,
+      "override": {"MAE": 1.903, "median": 1.240, "hit_pct": 0.0},
+      "note": "tuki-zero only (1 song)"
+    }
+  ]
+}

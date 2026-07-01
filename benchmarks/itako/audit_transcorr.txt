@@ -1,0 +1,55 @@
+song      offset  median  resid¢ nvoiced  flag
+itako01        0   0.147    14.7     212  
+itako02        0   0.388    38.8     235  
+itako03        1   1.229    22.9      75  SHIFT
+itako04        0   0.357    35.7     189  
+itako05        0   0.427    42.7     196  
+itako06        0   0.301    30.1     153  
+itako07        0   0.200    20.0     194  
+itako08        1   0.600   -40.0     161  SHIFT
+itako09        0   0.411    41.1     229  
+itako10        0   0.151    15.1     155  
+itako11        0   0.302    30.2     183  
+itako12        0   0.230    23.0     226  
+itako13        0   0.140    14.0     228  
+itako14        0   0.276    27.6     188  
+itako15        0   0.413    41.3     190  
+itako16        1   0.514   -48.6     179  SHIFT
+itako17        0   0.157    15.7     166  
+itako18        0   0.219    21.9     162  
+itako19        0   0.215    21.5     120  
+itako20        0   0.289    28.9     201  
+itako21        0   0.296    29.6     263  
+itako22        0   0.157    15.7     221  
+itako23        0   0.187    18.7     196  
+itako24        0   0.279    27.9     189  
+itako25        0   0.035     3.5     212  
+itako26        0   0.385    38.5     218  
+itako27        0   0.475    47.5     163  
+itako28        0   0.040     4.0     138  
+itako29        0   0.100    10.0     426  
+itako30        0   0.430    43.0     227  
+itako31        0   0.251    25.1     173  
+itako32        0   0.403    40.3     122  
+itako33        0   0.444    44.4     219  
+itako34        0   0.154    15.4     198  
+itako35        0   0.277    27.7     150  
+itako36        0   0.424    42.4     176  
+itako37        0   0.381    38.1     179  
+itako38        0   0.375    37.5     192  
+itako39        1   0.683   -31.7     210  SHIFT
+itako40        0   0.224    22.4     200  
+itako41        0   0.326    32.6     206  
+itako42        0   0.144    14.4     151  
+itako43        0   0.369    36.9     256  
+itako44        0   0.320    32.0     230  
+itako45        0   0.161    16.1     209  
+itako46        0   0.182    18.2     206  
+itako47        0   0.050     5.0     125  
+itako48        0   0.452    45.2     165  
+itako49        0   0.391    39.1     182  
+itako50       13  12.639   -36.1     247  SHIFT
+
+[audit] 5/50 songs transposed (|offset|>=1); offset distribution: {0: 45, 1: 4, 13: 1}
+[audit] global tuning: mean residual +22.0¢ (near 0 ⇒ in tune to A440 once integer transpose removed)
+[audit] wrote gt_transcorr.json

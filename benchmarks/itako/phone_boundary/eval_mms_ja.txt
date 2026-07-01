@@ -1,0 +1,4 @@
+songs=50 phones=17752 mismatches=0
+start_MAE=0.111s med=0.051s P90=0.194s BER50=50.8%
+end_MAE=0.116s med=0.059s P90=0.197s BER50=55.7%
+boundary_MAE=0.113s med=0.055s BER10/20/50=89.0%/78.6%/53.3%
