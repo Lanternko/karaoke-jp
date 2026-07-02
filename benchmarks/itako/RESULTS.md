@@ -153,3 +153,99 @@ claims. It **caught the itako03/47 tempo-map bug** (re-reported above as fixed),
 only −15.7¢ vs the −100¢ a 1-semitone shared bias would need; on GAME=GT+1 notes
 RMVPE follows GAME *upward* 70% — impossible for a flat bias), and corrected
 "Itako is cleaner" → "different defect type." Numbers here reflect those fixes.
+
+## COnPOff+L (2026-07-02)
+
+**Verdict — the aligner discriminability REPRODUCES on the second DB.** MMS_FA
+beats MMS-JA on COnPOff+L by **+2.2pp CI[+1.2, +3.2]** (defectfix) / **+2.0pp
+CI[+1.1, +3.0]** (raw), both **significant**, and this holds *independently* of
+Itako's score-vs-sung-pitch GT defect (the defect lives in COnP, which the +L rung
+sits on top of unchanged — mora attribution is a pure timing question). The
+oracle→MMS_FA tax is **+3.4pp CI[+2.6, +4.2]** (defectfix), matching Kiritan's
++3.4pp almost exactly. The COnPOff→+L drop is **near-constant across note models**
+at a fixed aligner (oracle −2.9/−2.2pp, MMS_FA −6.2/−5.4pp, MMS-JA −8.4/−6.9pp for
+GAME/CE+CTC) — the tax is an *aligner* property, not a note-model one, as on Kiritan.
+
+Script: `conpoff_l.py` (adapted from `../kiritan/conpoff_l.py`: mono_label ÷1e7,
+raw+defectfix GT loop, itako01 GT-morae +50 ms under defectfix). Same four-condition
+matching (onset 50 ms / pitch 50 cents / offset max(50 ms, 0.2·dur) / lyric mora
+label), same paired bootstrap. Full JSON: `conpoff_l_results.json` (both variants).
+
+### Ladder (N=50, macro per-song F1) — **primary = defectfix**
+
+| note model | aligner | COn | COnP | COnPOff | COnPOff+L | P(L\|match) |
+|---|---|---|---|---|---|---|
+| GAME | oracle | 0.828 | 0.507 | 0.411 | 0.382 | 92.8% |
+| **GAME** | **MMS_FA** | 0.828 | 0.507 | 0.411 | **0.348** | 84.6% |
+| GAME | MMS-JA | 0.828 | 0.507 | 0.411 | 0.326 | 79.2% |
+| CE+CTC | oracle | 0.838 | 0.525 | 0.386 | 0.364 | 94.3% |
+| CE+CTC | MMS_FA | 0.838 | 0.525 | 0.386 | 0.332 | 85.7% |
+| CE+CTC | MMS-JA | 0.838 | 0.525 | 0.386 | 0.316 | 81.6% |
+
+raw variant (secondary robustness): GAME COnPOff+L oracle/MMS_FA/MMS-JA =
+0.370/0.338/0.318; CE+CTC = 0.355/0.323/0.310. COnPOff = GAME 0.397 / CE+CTC 0.374.
+
+### Discrimination (paired bootstrap, 95% CI, primary defectfix / secondary raw)
+
+| contrast | defectfix | raw |
+|---|---|---|
+| aligner A/B (GAME: MMS_FA − MMS-JA) | **+0.0219 [+0.0122, +0.0317]** sig | **+0.0202 [+0.0106, +0.0299]** sig |
+| aligner tax (GAME: oracle − MMS_FA) | +0.0335 [+0.0258, +0.0416] sig | +0.0324 [+0.0247, +0.0408] sig |
+| note model A/B (MMS_FA: GAME − CE+CTC) | +0.0160 [+0.0005, +0.0313] sig | +0.0144 [−0.0004, +0.0292] **n.s.** |
+
+### Anchor validation (COnPOff, no-L rung vs RESULTS.md `evaluate.py`)
+
+| | script | RESULTS.md | Δ |
+|---|---|---|---|
+| GAME raw | 0.397 | 0.400 | 0.003 |
+| GAME defectfix | 0.411 | 0.414 | 0.003 |
+| CE+CTC raw | 0.374 | 0.374 | 0.000 |
+| CE+CTC defectfix | 0.386 | 0.386 | 0.000 |
+
+All ≤0.003 (well under the ±0.015 stop-threshold). The tiny GAME gap is the known
+bipartite-match vs official-`evaluate.py` difference (same as Kiritan); CE+CTC is
+exact. COn also matches (GAME raw 0.819 vs 0.824, CE+CTC raw 0.828 = exact).
+
+### Cross-dataset (Itako vs Kiritan, same metric code)
+
+| | Kiritan (gt_timefix) | Itako (gt_defectfix) |
+|---|---|---|
+| GAME×MMS_FA COnPOff+L | 0.408 | 0.348 |
+| aligner A/B (MMS_FA − MMS-JA) | +0.036 [+2.8, +4.4] | +0.022 [+1.2, +3.2] |
+| oracle tax (oracle − MMS_FA) | +0.034 | +0.034 |
+| tax cross-note-model | near-constant | near-constant |
+
+Itako's absolute COnPOff+L is ~6pp lower than Kiritan — expected, since it inherits
+Itako's suppressed COnP (score-vs-sung-pitch GT defect, ~19% matched notes GT sharp
+1 semitone; see *Read #2*). The **relative** aligner ordering (oracle > MMS_FA >
+MMS-JA) and its significance reproduce; the aligner gap is smaller (+2.2 vs +3.6pp)
+but firmly non-zero. Terminology note — two distinct "taxes", both real: (1)
+**aligner tax** = oracle − MMS_FA on COnPOff+L = +3.4pp on BOTH DBs (exact
+cross-DB match); (2) **attribution noise floor** = the COnPOff→+L drop under the
+oracle aligner (perfect phone times, so the residual is pure note-onset-vs-mora-
+onset attribution ambiguity) = Kiritan −5.7/−5.4pp (GAME/CE+CTC, ≈5.5pp) vs Itako
+−2.9/−2.2pp. The earlier "oracle tax ≈5.5pp" quote was framing (2), not an error.
+Itako's attribution floor is roughly HALF Kiritan's — attribution is cleaner here
+(0/50 mora mismatches, see below).
+
+### Mora mismatch & smoke checks
+
+- **Mora sequence mismatch: 0/50 songs for BOTH aligners** (MMS_FA and MMS-JA emit
+  the identical mora label sequence as mono_label on every song). So the +L rung
+  isolates *timing attribution* cleanly here — no label-sequence confound, unlike a
+  DB where aligners drop/insert morae. This strengthens the "L = right bar, right
+  word" reading versus Kiritan.
+- Smoke (a) itako01 3-way anchor: mono_label `da` @5.38s ↔ mms_fa `da` @5.36s ↔
+  GT note @5.40s — aligned. Smoke (b) itako05: group_morae=195 == vowel+N in
+  mono_label=195. Smoke (c) itako50 raw COnP=0.000 (octave-defect signature),
+  COn=0.925 — as expected.
+
+### Note (surprise, reported straight)
+
+The **note-model** contrast (GAME − CE+CTC on MMS_FA) flips from **significant on
+defectfix** [+0.0005, +0.0313] to **n.s. on raw** [−0.0004, +0.0292] — the CI
+lower bound sits right on zero. This is a knife-edge, not a reversal: GAME never
+loses. The defect fix (itako50 octave + itako01 lag) marginally favours GAME's
+onset placement, tipping the CI positive. The headline aligner claim is robust to
+this; the note-model claim on Itako is best stated as "GAME ≥ CE+CTC, marginal."
+No unexpected sign flips elsewhere (MMS_FA never lost to MMS-JA).

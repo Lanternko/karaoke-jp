@@ -187,6 +187,143 @@ ends: MAE, median AE, P90 AE, and percentage within 50 ms.
   `phone_boundary/eval_mms_fa_ignore_cl.json`,
   `phone_boundary_phrase/eval_sofa_ignore_cl.json`
 
+## COnPOff+L — lyric-conditioned joint metric, first numbers (2026-07-02)
+
+`conpoff_l.py`. A note is correct only if onset(50ms) + pitch(50c) + offset +
+**romaji mora label** all pass. Literature-verified novel (no published
+lyric-conditioned COnPOff exists; template = mir_eval.transcription_velocity,
+4th-condition precedent = T3MS note-value, arXiv:2502.12438). Mora attribution:
+ownership interval [mora_onset, next_mora_onset); `cl` merges into the next
+mora; MMS labs are forced alignment of the GT phone sequence, so L isolates
+TIMING attribution (lyrics known — the karaoke setting). Sanity: CE+CTC ladder
+reproduces official evaluate.py exactly (.860/.652/.492); GAME within 0.003.
+
+| note model | aligner | COn | COnP | COnPOff | **COnPOff+L** | P(L\|match) |
+|---|---|---|---|---|---|---|
+| GAME | oracle (GT morae) | .860 | .643 | .499 | .442 | 88.6% |
+| GAME | MMS_FA | .860 | .643 | .499 | **.408** | 81.6% |
+| GAME | MMS-JA | .860 | .643 | .499 | .372 | 74.4% |
+| CE+CTC | oracle | .860 | .652 | .492 | .438 | 89.3% |
+| CE+CTC | MMS_FA | .860 | .652 | .492 | .406 | 82.5% |
+| CE+CTC | MMS-JA | .860 | .652 | .492 | .376 | 76.5% |
+
+**Discrimination (paired bootstrap over 50 songs, 95% CI):**
+
+- MMS_FA vs MMS-JA (same GAME notes): **+3.6pp [+2.8, +4.4] SIGNIFICANT** —
+  the metric cleanly ranks aligners; CI is ~4x narrower than the effect.
+- Aligner tax (oracle − MMS_FA): +3.4pp [+2.6, +4.2] significant.
+- GAME vs CE+CTC (same aligner): +0.1pp n.s. — the note-model tie carries over.
+
+**Reads.**
+
+1. **The "all low scores, rotten-apples-fighting" worry is empirically refuted
+   on the aligner axis**: the floor is set by COnPOff (~.50), the L tax is
+   6–13pp (not a collapse), and aligner differences are 4x the bootstrap CI.
+2. **The tax is NOT uniform across aligners** (oracle −5.7pp / MMS_FA −9.1 /
+   MMS-JA −12.7) — that non-uniformity IS the discrimination. Across note
+   models with the same aligner it is near-uniform (−9.1 vs −8.6), as
+   predicted: shared aligner ⇒ shared tax ⇒ note-model ranking unchanged.
+3. **MMS-JA < MMS_FA on clean a cappella re-confirmed through a completely
+   independent metric path** (phone-boundary benchmark said the same; this is
+   triangulation, not reuse).
+4. **Oracle tax (−5.5pp, 11% of matched notes) = the metric's intrinsic
+   attribution-noise floor**: matched note pairs whose onsets straddle a mora
+   boundary within the 50ms tolerance. Future refinement target, honest caveat.
+5. Product KPI reading: GAME x MMS_FA = **.408 ⇒ ~41% of karaoke bars fully
+   correct** (right time, pitch, length, AND word) on the Kiritan protocol.
+
+Artifacts: `conpoff_l.py`, `conpoff_l_results.json`.
+
+## UltraSinger — first-ever COnPOff+L eval of a full-stack karaoke tool (2026-07-02)
+
+`ultrasinger_eval.py` (reuses `conpoff_l.py` verbatim). UltraSinger is the only
+open-source tool that produces a *complete* karaoke artifact (notes + pitch +
+per-syllable lyrics + timing) end-to-end, and it had **zero published
+quantitative evaluation**. This is its first.
+
+**Setup asymmetry (must read).** Every other row in this file is **lyrics-known**:
+MMS/oracle align the *given* GT phone sequence, so their L tax isolates *timing
+attribution*. UltraSinger is **lyrics-UNKNOWN** — whisperx transcribes the
+lyrics from audio itself — so its L tax folds *mis-heard characters* **and**
+*time attribution* together. It is a strictly harder setting, and an honest
+reading of a full-stack system, not an unfair one. That is why we report the
+fully-fair note axes (COn/COnP/COnPOff — pitch-and-timing only, lyrics-agnostic)
+next to COnPOff+L.
+
+| system | setting | COn | COnP | COnPOff | **COnPOff+L** | P(L\|match) |
+|---|---|---|---|---|---|---|
+| GAME × MMS_FA | lyrics-known | .860 | .643 | .499 | **.408** | 81.6% |
+| **UltraSinger** | lyrics-unknown | **.304** | **.120** | **.039** | **.002** | **6.0%** |
+
+Kiritan N=50, gt_timefix, macro per-song F1. UltraSinger: **0 failed songs**.
+
+**Discrimination (paired bootstrap, same 50 songs, 2000 iters, seed 7):**
+UltraSinger − GAME×MMS_FA is significantly negative on **every** axis —
+COn −.556 [−.588, −.516], COnP −.523 [−.569, −.475], COnPOff −.460
+[−.501, −.417], **COnPOff+L −.406 [−.439, −.368] SIGNIFICANT**. The gap is
+~13× the bootstrap CI; nothing marginal here.
+
+**Reads.**
+
+1. **UltraSinger struggles across the whole ladder on a-cappella Kiritan** — the
+   collapse is not localized to the (harder) lyric axis; even the fully-fair
+   **COn = .304** (bare onset+pitch note match) is a third of GAME's .860.
+   **Caveat — a LANGUAGE confound touches every axis, not just L.** Source read
+   (`midi_creator.py:153` → `create_midi_notes_from_pitched_data`): UltraSinger
+   has **no pitch-onset note detector**. Every note's start/end is a *whisperx
+   syllable boundary*; swift-f0 only fills the pitch value inside each
+   whisper-defined window. So weak Japanese ASR timestamping/segmentation
+   propagates into COn/COnP/COnPOff onsets, not only into the lyric label. The
+   pitch *value* (the P) is language-agnostic (swift-f0); the *timing/segmentation*
+   is whisper-driven and therefore language-sensitive. We CANNOT yet separate
+   "clean a-cappella note transcription is intrinsically hard for this tool" from
+   "non-English ASR-driven segmentation is weak." **Decisive control = run the
+   same pipeline on an English a-cappella note-GT set (vocadito, 40 clips).** If
+   COn jumps on English, the story is "ASR-segmentation bottleneck on JA"; if it
+   stays low, "no pitch-onset detector ⇒ weak regardless of language." Until that
+   control runs, the honest claim is the *number* (.304 on JA Kiritan), not a
+   language-neutral verdict.
+2. **Two mechanisms, both diagnosed on the raw output** (see `PROGRESS.md`):
+   (a) **over-segmentation** — UltraSinger emits **13,361 notes vs GT's 10,370**
+   (median est/ref ratio 1.2, up to 2.57×), because it splits held notes into a
+   note + a run of `~` continuation segments; the extra notes dilute precision
+   and drag F1 down. (b) **syllable over-holding** — whisperx sometimes lumps a
+   long stretch under one syllable (song 01: a single `き` at 19.1s then 16+ `~`
+   held notes to 32s, while GT has se/re/be/… there), so the est syllable
+   timeline is badly misaligned with GT → the L axis reads near-zero honestly.
+3. **P(L | match) = 6.0%** (vs GAME×MMS_FA 81.6%): of the few notes that do pass
+   COnPOff, almost none also carry the right mora — combined mis-hearing +
+   attribution error, exactly the lyrics-unknown double tax.
+4. The lyric content itself is *plausible* (song 01 syllables read
+   `き っ と 飛 べ ば 空 ま で 届 く…`), so this is not a total transcription
+   failure — it is a **timing/segmentation** failure that COnPOff+L surfaces
+   quantitatively where a lyrics-only WER would miss it.
+
+**Octave-convention gotcha (recorded for reuse):** this UltraSinger build writes
+notes as `midi = ultrastar_note + 48` (its `ultrastar_converter.py` comments
+"C4 == 48"), NOT the +60 the generic UltraStar spec / `parse_ultrastar.py`
+assumes. The mandated octave check caught it: +60 put the EST−GT pitch delta on
++12 (63 exact-+12 notes on song 01); +48 recentres it on 0. The eval uses +48.
+
+**Protocol.** UltraSinger commit `e94d942` (v0.0.13.dev16) · whisperx 3.8.1
+(model `large-v3`, `--language ja`) · pitch = swift-f0 0.1.2 (not CREPE) ·
+separation = demucs 4.0.1 htdemucs (default; a-cappella input) · torch
+2.8.0+cu128 on RTX 5090 (sm_120) · inputs = Kiritan wav resampled to
+44.1kHz/16-bit/mono · **~34 s/song** (29–43 s), ~17 min for the batch · L chain:
+UltraStar syllable → fugashi+UniDic reading → kiritan `japanese.table` phones →
+`group_morae` first mora (`~` inherits the prior mora; 723/13361 = 5.4% of notes
+un-convertible → "?" = honest L fail). Env note: torchcodec failed to load
+(`libavutil.so` missing) on the later songs; UltraSinger fell back to another
+decoder and completed — the `rc=1` exits are from the trailing MuseScore
+sheet-render step (MuseScore not installed), *after* notes were written, so they
+do not affect the transcription. All 50 note files verified non-truncated
+(170–480 notes each).
+
+Artifacts: `ultrasinger_eval.py`, `ultrasinger/{PLAN,PROGRESS}.md`,
+`ultrasinger/{syllable_to_mora,build_pred,run_batch.sh}`,
+`ultrasinger/{ultrasinger_pred,ultrasinger_morae,ultrasinger_results}.json`.
+(Raw UltraStar `out/` and the resampled audio are gitignored.)
+
 ## GAME threshold sweep (2026-06-12)
 
 seg/est threshold grid on timefix GT. est (presence) is a dead knob;

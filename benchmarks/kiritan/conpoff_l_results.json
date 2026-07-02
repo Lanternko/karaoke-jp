@@ -1,0 +1,44 @@
+{
+  "GAMExoracle": {
+    "COn": 0.8604,
+    "COnP": 0.6429,
+    "COnPOff": 0.499,
+    "COnPOff+L": 0.4417,
+    "P_L_given_match": 0.8863
+  },
+  "GAMExMMS_FA": {
+    "COn": 0.8604,
+    "COnP": 0.6429,
+    "COnPOff": 0.499,
+    "COnPOff+L": 0.4077,
+    "P_L_given_match": 0.816
+  },
+  "GAMExMMS-JA": {
+    "COn": 0.8604,
+    "COnP": 0.6429,
+    "COnPOff": 0.499,
+    "COnPOff+L": 0.3715,
+    "P_L_given_match": 0.7443
+  },
+  "CE+CTCxoracle": {
+    "COn": 0.8605,
+    "COnP": 0.6518,
+    "COnPOff": 0.4918,
+    "COnPOff+L": 0.4383,
+    "P_L_given_match": 0.8931
+  },
+  "CE+CTCxMMS_FA": {
+    "COn": 0.8605,
+    "COnP": 0.6518,
+    "COnPOff": 0.4918,
+    "COnPOff+L": 0.4063,
+    "P_L_given_match": 0.825
+  },
+  "CE+CTCxMMS-JA": {
+    "COn": 0.8605,
+    "COnP": 0.6518,
+    "COnPOff": 0.4918,
+    "COnPOff+L": 0.3761,
+    "P_L_given_match": 0.7653
+  }
+}

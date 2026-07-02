@@ -52,6 +52,14 @@ Thumbs.db
 # Snakemake
 .snakemake/
 
+# UltraSinger benchmark raw outputs (UltraStar txt/mid/cache/cover per song) and
+# resampled audio — regenerable, large; only the derived pred/morae/results JSON
+# and the scripts are tracked. See benchmarks/kiritan/RESULTS.md §UltraSinger.
+benchmarks/kiritan/ultrasinger/out/
+benchmarks/vocadito/out/
+benchmarks/vocadito/*.wav
+benchmarks/vocadito/nohup_batch.out
+
 # Third-party repos: cloned by setup script, not vendored.
 third_party/*
 !third_party/.gitkeep

@@ -1,0 +1,136 @@
+{
+  "defectfix": {
+    "ladder": {
+      "GAMExoracle": {
+        "COn": 0.8283,
+        "COnP": 0.5075,
+        "COnPOff": 0.4105,
+        "COnPOff+L": 0.3816,
+        "P_L_given_match": 0.9281
+      },
+      "GAMExMMS_FA": {
+        "COn": 0.8283,
+        "COnP": 0.5075,
+        "COnPOff": 0.4105,
+        "COnPOff+L": 0.3481,
+        "P_L_given_match": 0.8456
+      },
+      "GAMExMMS-JA": {
+        "COn": 0.8283,
+        "COnP": 0.5075,
+        "COnPOff": 0.4105,
+        "COnPOff+L": 0.3263,
+        "P_L_given_match": 0.7918
+      },
+      "CE+CTCxoracle": {
+        "COn": 0.8384,
+        "COnP": 0.5248,
+        "COnPOff": 0.3856,
+        "COnPOff+L": 0.3639,
+        "P_L_given_match": 0.9427
+      },
+      "CE+CTCxMMS_FA": {
+        "COn": 0.8384,
+        "COnP": 0.5248,
+        "COnPOff": 0.3856,
+        "COnPOff+L": 0.3318,
+        "P_L_given_match": 0.8571
+      },
+      "CE+CTCxMMS-JA": {
+        "COn": 0.8384,
+        "COnP": 0.5248,
+        "COnPOff": 0.3856,
+        "COnPOff+L": 0.3163,
+        "P_L_given_match": 0.8163
+      }
+    },
+    "discrimination": {
+      "GAMExMMS_FA - GAMExMMS-JA": {
+        "mean": 0.0219,
+        "lo": 0.0122,
+        "hi": 0.0317
+      },
+      "GAMExoracle - GAMExMMS_FA": {
+        "mean": 0.0335,
+        "lo": 0.0258,
+        "hi": 0.0416
+      },
+      "GAMExMMS_FA - CE+CTCxMMS_FA": {
+        "mean": 0.016,
+        "lo": 0.0005,
+        "hi": 0.0313
+      }
+    },
+    "mismatch": {
+      "MMS_FA": [],
+      "MMS-JA": []
+    }
+  },
+  "raw": {
+    "ladder": {
+      "GAMExoracle": {
+        "COn": 0.8192,
+        "COnP": 0.4912,
+        "COnPOff": 0.397,
+        "COnPOff+L": 0.3703,
+        "P_L_given_match": 0.9315
+      },
+      "GAMExMMS_FA": {
+        "COn": 0.8192,
+        "COnP": 0.4912,
+        "COnPOff": 0.397,
+        "COnPOff+L": 0.338,
+        "P_L_given_match": 0.8491
+      },
+      "GAMExMMS-JA": {
+        "COn": 0.8192,
+        "COnP": 0.4912,
+        "COnPOff": 0.397,
+        "COnPOff+L": 0.3179,
+        "P_L_given_match": 0.7983
+      },
+      "CE+CTCxoracle": {
+        "COn": 0.8278,
+        "COnP": 0.5092,
+        "COnPOff": 0.3743,
+        "COnPOff+L": 0.3549,
+        "P_L_given_match": 0.9469
+      },
+      "CE+CTCxMMS_FA": {
+        "COn": 0.8278,
+        "COnP": 0.5092,
+        "COnPOff": 0.3743,
+        "COnPOff+L": 0.3233,
+        "P_L_given_match": 0.8601
+      },
+      "CE+CTCxMMS-JA": {
+        "COn": 0.8278,
+        "COnP": 0.5092,
+        "COnPOff": 0.3743,
+        "COnPOff+L": 0.3096,
+        "P_L_given_match": 0.8237
+      }
+    },
+    "discrimination": {
+      "GAMExMMS_FA - GAMExMMS-JA": {
+        "mean": 0.0202,
+        "lo": 0.0106,
+        "hi": 0.0299
+      },
+      "GAMExoracle - GAMExMMS_FA": {
+        "mean": 0.0324,
+        "lo": 0.0247,
+        "hi": 0.0408
+      },
+      "GAMExMMS_FA - CE+CTCxMMS_FA": {
+        "mean": 0.0144,
+        "lo": -0.0004,
+        "hi": 0.0292
+      }
+    },
+    "mismatch": {
+      "MMS_FA": [],
+      "MMS-JA": []
+    }
+  }
+}

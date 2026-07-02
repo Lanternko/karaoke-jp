@@ -1,0 +1,12 @@
+{
+  "UltraSinger": {
+    "COn": 0.3044,
+    "COnP": 0.12,
+    "COnPOff": 0.039,
+    "COnPOff+L": 0.0023,
+    "P_L_given_match": 0.0603,
+    "N": 50,
+    "failed_songs": []
+  },
+  "sanity_GAMExMMS_FA_COnPOffL": 0.408
+}
