@@ -113,3 +113,8 @@ songs/*/backing.json
 # Whale's background is the copyrighted album art (user-supplied) — the
 # !background.png allowance is only for original / pure-background images.
 songs/whale/background.png
+
+# Alignment line-gold TSVs carry full lyric text — private-repo class.
+# Canonical copies: karaoke-jp-gold/alignment_gold/ (restore with
+# `cp gold/alignment_gold/*.gold.tsv data/alignment_gold/`).
+data/alignment_gold/*.gold.tsv
