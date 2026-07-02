@@ -280,9 +280,18 @@ COn −.556 [−.588, −.516], COnP −.523 [−.569, −.475], COnPOff −.460
    "non-English ASR-driven segmentation is weak." **Decisive control = run the
    same pipeline on an English a-cappella note-GT set (vocadito, 40 clips).** If
    COn jumps on English, the story is "ASR-segmentation bottleneck on JA"; if it
-   stays low, "no pitch-onset detector ⇒ weak regardless of language." Until that
-   control runs, the honest claim is the *number* (.304 on JA Kiritan), not a
-   language-neutral verdict.
+   stays low, "no pitch-onset detector ⇒ weak regardless of language."
+   **CONTROL RAN (`../vocadito/RESULTS.md`, 2026-07-02): confound confirmed
+   real.** English COn = .492 [CI .438–.549] vs JA .304 (~1.6×, CI-separated),
+   and within one dataset the CJK language (Mandarin .330) lands right at Kiritan
+   JA (.304) while Latin-script languages sit at .40–.49. So a large part of this
+   COn collapse is whisper-segmentation-on-CJK, NOT intrinsic. **Two caveats
+   keep it honest:** (a) even English COnPOff = .095 collapses via the
+   language-agnostic pitch/offset conditions (swift-f0), so Kiritan's near-zero
+   COnPOff+L was never mainly a lyric penalty — COnPOff is on the floor in every
+   language; (b) vocadito (~14 s clips) vs Kiritan (~4 min) is cross-dataset, so
+   the within-vocadito Mandarin≈Kiritan gradient (not the raw EN-vs-JA gap)
+   carries the language claim.
 2. **Two mechanisms, both diagnosed on the raw output** (see `PROGRESS.md`):
    (a) **over-segmentation** — UltraSinger emits **13,361 notes vs GT's 10,370**
    (median est/ref ratio 1.2, up to 2.57×), because it splits held notes into a

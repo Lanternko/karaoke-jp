@@ -1,0 +1,143 @@
+{
+  "A1": {
+    "all": {
+      "COn": 0.4313,
+      "COnP": 0.2167,
+      "COnPOff": 0.083
+    },
+    "english_COn": 0.4916,
+    "english_COn_CI": [
+      0.4381,
+      0.549
+    ],
+    "english_n": 17,
+    "n_clips": 40,
+    "by_language": {
+      "Tagalog": {
+        "n": 6,
+        "COn": 0.4379,
+        "COnP": 0.2326,
+        "COnPOff": 0.0979
+      },
+      "Spanish": {
+        "n": 1,
+        "COn": 0.1982,
+        "COnP": 0.0901,
+        "COnPOff": 0.018
+      },
+      "Catalan/Valencian": {
+        "n": 2,
+        "COn": 0.4033,
+        "COnP": 0.2377,
+        "COnPOff": 0.072
+      },
+      "English": {
+        "n": 17,
+        "COn": 0.4917,
+        "COnP": 0.2483,
+        "COnPOff": 0.0955
+      },
+      "French": {
+        "n": 9,
+        "COn": 0.3992,
+        "COnP": 0.2018,
+        "COnPOff": 0.0744
+      },
+      "none": {
+        "n": 1,
+        "COn": 0.2432,
+        "COnP": 0.1351,
+        "COnPOff": 0.0541
+      },
+      "French+English": {
+        "n": 1,
+        "COn": 0.4898,
+        "COnP": 0.2449,
+        "COnPOff": 0.102
+      },
+      "Mandarin": {
+        "n": 2,
+        "COn": 0.3301,
+        "COnP": 0.0493,
+        "COnPOff": 0.021
+      },
+      "Hawaiian+English": {
+        "n": 1,
+        "COn": 0.274,
+        "COnP": 0.1918,
+        "COnPOff": 0.0822
+      }
+    }
+  },
+  "A2": {
+    "all": {
+      "COn": 0.4448,
+      "COnP": 0.2217,
+      "COnPOff": 0.0995
+    },
+    "english_COn": 0.4975,
+    "english_COn_CI": [
+      0.4509,
+      0.5519
+    ],
+    "english_n": 17,
+    "n_clips": 40,
+    "by_language": {
+      "Tagalog": {
+        "n": 6,
+        "COn": 0.4602,
+        "COnP": 0.2469,
+        "COnPOff": 0.1099
+      },
+      "Spanish": {
+        "n": 1,
+        "COn": 0.2857,
+        "COnP": 0.1429,
+        "COnPOff": 0.0408
+      },
+      "Catalan/Valencian": {
+        "n": 2,
+        "COn": 0.3718,
+        "COnP": 0.2305,
+        "COnPOff": 0.0594
+      },
+      "English": {
+        "n": 17,
+        "COn": 0.4977,
+        "COnP": 0.2548,
+        "COnPOff": 0.1261
+      },
+      "French": {
+        "n": 9,
+        "COn": 0.4151,
+        "COnP": 0.1999,
+        "COnPOff": 0.0852
+      },
+      "none": {
+        "n": 1,
+        "COn": 0.3881,
+        "COnP": 0.2388,
+        "COnPOff": 0.1194
+      },
+      "French+English": {
+        "n": 1,
+        "COn": 0.475,
+        "COnP": 0.175,
+        "COnPOff": 0.05
+      },
+      "Mandarin": {
+        "n": 2,
+        "COn": 0.3272,
+        "COnP": 0.0718,
+        "COnPOff": 0.0078
+      },
+      "Hawaiian+English": {
+        "n": 1,
+        "COn": 0.2857,
+        "COnP": 0.0952,
+        "COnPOff": 0.0635
+      }
+    }
+  },
+  "kiritan_ja_COn_reference": 0.304
+}
