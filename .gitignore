@@ -57,8 +57,10 @@ Thumbs.db
 # and the scripts are tracked. See benchmarks/kiritan/RESULTS.md §UltraSinger.
 benchmarks/kiritan/ultrasinger/out/
 benchmarks/vocadito/out/
+benchmarks/vocadito/out_nokey/
 benchmarks/vocadito/*.wav
 benchmarks/vocadito/nohup_batch.out
+benchmarks/vocadito/nohup_nokey.out
 
 # Third-party repos: cloned by setup script, not vendored.
 third_party/*
