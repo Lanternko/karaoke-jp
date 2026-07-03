@@ -86,32 +86,55 @@ should get *pitch* right, so COnP shouldn't halve COn." Investigated:
   semitone transcriber would score ~100 % within 50 c, since every value is ≤50 c
   from its own nearest semitone — so semitone quantization is NOT the ceiling;
   wrong-note picks are.)
-- **Cause 1 — UltraSinger's own `quantize_to_key=True` default** (Settings.py:29,
-  no CLI flag) snaps every note to a *detected* musical key. When key detection
-  is off, correct notes get pushed to the nearest scale degree = ±1 semitone.
-  **Ablation (17 English clips re-run with `quantize_to_key=False`):**
+- **Cause 1 — `quantize_to_key=True` default (Settings.py:29, no CLI flag) — but
+  its sign is DATASET-DEPENDENT.** It snaps every note to a *detected* musical
+  key. **Ablation (re-run with `quantize_to_key=False`, both DBs, N=full):**
 
-  | | COn | COnP | COnPOff | P(pitch OK \| onset match) |
+  | | COn | COnP | COnPOff | P(pitch OK \| onset) |
   |---|---|---|---|---|
-  | key-quant ON (default, headline) | .492 | .248 | .095 | 46.1 % |
-  | key-quant OFF | .499 | **.287** | .104 | **54.7 %** |
+  | vocadito English — key-quant ON (default) | .492 | .248 | .095 | 46.1 % |
+  | vocadito English — key-quant OFF | .499 | **.287** | .104 | **54.7 %** |
+  | Kiritan JA — key-quant ON (default) | .304 | **.120** | **.039** | **37.2 %** |
+  | Kiritan JA — key-quant OFF | .300 | .108 | .034 | 33.9 % |
 
-  So the default costs ~4 pp COnP / ~9 pp pitch-given-onset. Real, and *fixable* —
-  the headline uses the out-of-the-box default (what a user gets), but the fair
-  "pitch capability" number is the OFF row.
-- **Cause 2 — mode-over-a-misaligned-window (inherent).** Per-note pitch = the
-  *mode* of per-frame `librosa.hz_to_note` labels (midi_creator.py:71,148) across
-  the **whisper-defined** note window. When that window is wrong/over-held (the
-  same segmentation defect that tanks COn), the mode is taken over the wrong
-  audio → wrong note. This is why even key-quant-OFF stalls at 55 %: it is
-  downstream of the segmentation, not a pitch-tracker limitation. (swift-f0 per
-  se is fine; UltraSinger never exposes its sub-semitone value — it snaps to a
-  note name per frame, then modes, then key-snaps.)
+  On **clean-pitch English the key-snap HURTS** (correct near-miss notes pushed
+  to a wrong scale degree; OFF is +4 pp COnP). On **noisy-pitch Kiritan it HELPS**
+  — the snap *regularizes* the wild-error tail (below) back toward scale tones, so
+  ON (the default) is already the better setting and OFF is −1.2 pp. **So the
+  main (Kiritan) COnP is NOT a fixable-default artifact** — the default is already
+  favorable there; key-quant is not what's depressing it.
+- **Cause 2 — mode-over-a-misaligned-window (inherent, dominant on Kiritan).**
+  Per-note pitch = the *mode* of per-frame `librosa.hz_to_note` labels
+  (midi_creator.py:71,148) across the **whisper-defined** note window. When that
+  window is wrong/over-held (the same segmentation defect that tanks COn), the
+  mode is taken over the wrong audio → wrong note. This is why even key-quant-OFF
+  English stalls at 55 %, and why Kiritan (worse windows) has a genuine wild tail.
+  (swift-f0 per se is fine; UltraSinger never exposes its sub-semitone value — it
+  snaps to a note name per frame, then modes, then key-snaps.)
 
-**Net:** COnP halving COn is ~⅓ self-inflicted (key-quant default, recoverable)
-and ~⅔ segmentation-driven (inherent to whisper-anchored note windows). Neither
-is a harness bug. (Ablation on Kiritan not re-run — 50 long songs; mechanism is
-identical and expected to apply.)
+### How wrong is the pitch — near-miss or wild? (onset-matched notes)
+
+| |Δ| | vocadito English | Kiritan JA |
+|---|---|---|
+| ≤0.5 st (≈right) | 46 % | 37 % |
+| 0.5–1.5 st (**off by ~1 semitone, near-miss**) | 38 % | 25 % |
+| 1.5–2.5 st | 10 % | 18 % |
+| 2.5–6.5 st (moderate) | 6 % | 11 % |
+| ≥6.5 st incl. octave (**wild**) | **0.6 %** | **~9 %** |
+| median \|Δ\| | 56 cents | 100 cents |
+
+**English pitch is overwhelmingly near-misses** (84 % within one semitone, wild
+<1 %): "roughly right, tipped over the 50 c line by semitone-quantization +
+key-snap" — which is exactly why turning key-quant off recovers a chunk. **Kiritan
+is mostly near-miss too but carries a real ~9 % wild tail** (half-octave to
+octave-plus errors) from segmentation windows landing on the wrong audio — which
+is why key-snap *helps* it. Octave errors specifically are only 0.4 % on both
+(confirms the +48 convention: a wrong octave convention would spike here).
+
+**Net:** COnP halving COn is, on English, ~⅓ self-inflicted key-quant
+(recoverable) + ~⅔ segmentation; on **Kiritan it is essentially all segmentation**
+(key-quant already helps). Neither is a harness bug. Artifacts:
+`*_pred_nokey.json`.
 
 ## Alignment audit — is the low score a harness/parse bug? (No.)
 

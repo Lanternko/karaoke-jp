@@ -56,6 +56,9 @@ Thumbs.db
 # resampled audio — regenerable, large; only the derived pred/morae/results JSON
 # and the scripts are tracked. See benchmarks/kiritan/RESULTS.md §UltraSinger.
 benchmarks/kiritan/ultrasinger/out/
+benchmarks/kiritan/ultrasinger/out_nokey/
+benchmarks/kiritan/ultrasinger/nohup_nokey.out
+benchmarks/kiritan/ultrasinger/batch_nokey.log
 benchmarks/vocadito/out/
 benchmarks/vocadito/out_nokey/
 benchmarks/vocadito/*.wav
