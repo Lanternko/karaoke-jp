@@ -74,6 +74,36 @@ CJK," **not** "it cannot transcribe clean a cappella." But COnPOff+L's core
 reading survives either way: the joint metric surfaces a real, quantifiable
 failure that lyrics-only WER or pitch-only COnPOff would each miss.
 
+## Alignment audit — is the low score a harness/parse bug? (No.)
+
+Prompted by the reasonable worry that COn ~.5 is "too low to be real, must be a
+timebase/parse misalignment." Four checks, all pass:
+
+1. **Harness identity.** Feed GT as its own prediction ⇒ COn/COnP/COnPOff =
+   **1.000 / 1.000 / 1.000** (both vocadito and Kiritan). GT shifted +40 ms ⇒
+   COn still 1.000 (inside the 50 ms window, by design); +60 ms ⇒ 0.151 (drops,
+   as it must). The matcher is not deflating anything.
+2. **Beat→second conversion is provably UltraSinger's own.** `parse_ultrastar`
+   uses `spb = 60/(#BPM·4)`, `t = GAP/1000 + beat·spb`; UltraSinger's
+   `ultrastar_converter.py` computes `beat_to_second(beat, #BPM·4) + GAP/1000` —
+   identical. No BPM/scale error.
+3. **No time drift.** Matched-pair regression of (est_onset − gt_onset) vs time:
+   slope **+0.04 ms/s** (≈0 over a 14 s clip) ⇒ pure constant offset, not a
+   stretching/scale bug.
+4. **Global-offset sweep.** COn peaks at **Δ = −0.04 s** on BOTH datasets
+   (vocadito English .492→.532, Kiritan .304→.339) with a sharp, symmetric
+   falloff — i.e. a real but small **~40 ms systematic latency** (UltraSinger
+   onsets land slightly late; mean matched Δ +27 ms). Correcting it lifts the
+   score modestly and changes no conclusion (best-aligned English .53 is still
+   far below GAME's .86).
+
+**So the score is real, not a misalignment.** Even perfectly offset-corrected,
+onset **precision .60 / recall .49** (English): UltraSinger misses ~half the GT
+onsets (it under-segments/merges) and ~40 % of what it emits is spurious. The
+40 ms latency is within the 50 ms tolerance's purpose (onset-convention noise)
+and is reported as a robustness figure, not applied to the headline. Diagnostic:
+`alignment_audit.py`.
+
 ## Protocol
 
 UltraSinger commit `e94d942` · whisper large-v3 · per-clip `--language` from

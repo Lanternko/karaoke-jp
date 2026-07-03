@@ -314,6 +314,13 @@ notes as `midi = ultrastar_note + 48` (its `ultrastar_converter.py` comments
 assumes. The mandated octave check caught it: +60 put the EST−GT pitch delta on
 +12 (63 exact-+12 notes on song 01); +48 recentres it on 0. The eval uses +48.
 
+**Alignment audit (is .304 a timebase bug? No).** `../vocadito/alignment_audit.py`
+checks both DBs: harness identity est=GT ⇒ COn 1.000; beat→sec formula proven
+equal to UltraSinger's own `ultrastar_converter`; drift 0.00 ms/s (no scale
+error); COn peaks at Δ=−0.04 s (real ~40 ms latency) lifting .304→.339 only.
+The score is real — Kiritan onset precision .27 / recall .35: UltraSinger misses
+~⅔ of onsets and most of what it emits is spurious, not a global misalignment.
+
 **Protocol.** UltraSinger commit `e94d942` (v0.0.13.dev16) · whisperx 3.8.1
 (model `large-v3`, `--language ja`) · pitch = swift-f0 0.1.2 (not CREPE) ·
 separation = demucs 4.0.1 htdemucs (default; a-cappella input) · torch
