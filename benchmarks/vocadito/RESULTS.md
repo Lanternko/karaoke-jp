@@ -178,6 +178,48 @@ semitone-snapped swift-f0 frames — so wrong/over-held whisper windows (and swi
 octave slips) produce the 8.8 % wild tail GAME never has. UltraSinger never does
 note-level pitch estimation; it does lyric segmentation and then reads off a pitch.
 
+## UltraSinger architecture — exact pipeline (from source)
+
+Every read above follows from *how* UltraSinger builds a note. It never detects a
+note acoustically; it segments **lyrics**, chops them on a **metrical grid**, and
+reads a pitch off each cell. The chain (file:line):
+
+```
+whisperx ─▶ word timestamps ─▶ hyphenate to SYLLABLES        (UltraSinger.py:84 add_hyphen_to_data)
+                                    │  ← the onset/offset whisper gives is a LYRIC unit, not a note
+                                    ▼
+ split_syllables_into_segments      (UltraSinger.py:248) — any syllable longer than a
+   16th note is cut into [first cell] + a train of "~" cells, each ONE 16TH NOTE long
+   (get_sixteenth_note_second(bpm)).  ← a fixed METRICAL grid, not acoustic. This is where
+                                         the "~" continuation notes and the 40 ms fragments come from.
+                                    ▼
+ per cell [start,end] → create_midi_note_from_pitched_data   (midi_creator.py:117)
+   frames in window → high-confidence only → librosa.hz_to_note() snaps EACH frame to the
+   nearest semitone (cents discarded) → most_frequent() = MODE → quantize_note_to_key()
+                                    ▼
+ merge_syllable_segments (UltraSinger.py:319) — merge adjacent cells with the SAME pitch
+```
+
+**Two consequences that drive every number in this file:**
+
+1. **Note onset/offset are lyric+metrical, never acoustic.** No boundary comes
+   from the pitch changing; it comes from a syllable edge or a 16th-note gridline.
+   Hence the ~40 ms latency (§Alignment audit), the 40 ms median note length, and
+   the 53 % `<60 ms` fragments — and, on CJK, the collapse when whisper syllable
+   timing is weak (§language confound).
+2. **Pitch is a by-product of that grid**, not an estimate: the *mode* of
+   semitone-snapped swift-f0 frames over a window not aligned to the note. When
+   the window straddles a real note change, the mode returns a value that was
+   never sung (§the ~47 % "fabricated" pitches). Contrast GAME, which estimates
+   note boundaries and pitch *jointly from the acoustics* (median 0 cents,
+   §GAME control): each GAME note is a pitch-coherent region; each UltraSinger
+   note is a lyric/metrical cell with a pitch stamped on afterward.
+
+Crux for the paper: a **pitch-only** benchmark (e.g. MIR-ST500 COnP) or a
+**lyrics-only** WER each hides this; only a joint note×lyric metric (COnPOff+L)
+surfaces that UltraSinger's pitch fails *because* it is bolted onto lyric
+segmentation.
+
 ## Alignment audit — is the low score a harness/parse bug? (No.)
 
 Prompted by the reasonable worry that COn ~.5 is "too low to be real, must be a
