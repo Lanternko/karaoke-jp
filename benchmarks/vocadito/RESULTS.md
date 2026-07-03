@@ -136,6 +136,24 @@ is why key-snap *helps* it. Octave errors specifically are only 0.4 % on both
 (key-quant already helps). Neither is a harness bug. Artifacts:
 `*_pred_nokey.json`.
 
+### Control — GAME on the SAME Kiritan audio & GT (is the pitch even recoverable?)
+
+Yes. A dedicated note-transcription model on the identical clips (given onset):
+
+| model (Kiritan, onset-matched) | P(pitch OK) | median \|Δ\| | ≤0.5 st | ~1 st | wild ≥6.5 st |
+|---|---|---|---|---|---|
+| **GAME** (joint note+pitch AST) | **74.1 %** | **0 cents** | 74 % | 22 % | **0.2 %** |
+| UltraSinger (lyric-window + swift-f0 mode) | 37.2 % | 100 cents | 37 % | 25 % | **8.8 %** |
+
+GAME gets **median 0 cents** and ~0 wild errors on the very same audio ⇒ the pitch
+is fully recoverable; UltraSinger's collapse is **architectural, not an audio
+difficulty**. The gap's root cause: GAME estimates note boundaries and pitch
+*jointly from the acoustics* (each note is a pitch-coherent region), whereas
+UltraSinger reads a single pitch off a **lyrics-defined** window as the mode of
+semitone-snapped swift-f0 frames — so wrong/over-held whisper windows (and swift-f0
+octave slips) produce the 8.8 % wild tail GAME never has. UltraSinger never does
+note-level pitch estimation; it does lyric segmentation and then reads off a pitch.
+
 ## Alignment audit — is the low score a harness/parse bug? (No.)
 
 Prompted by the reasonable worry that COn ~.5 is "too low to be real, must be a
