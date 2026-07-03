@@ -136,6 +136,30 @@ is why key-snap *helps* it. Octave errors specifically are only 0.4 % on both
 (key-quant already helps). Neither is a harness bug. Artifacts:
 `*_pred_nokey.json`.
 
+### Is the wrong pitch "right note, wrong position" or "genuinely wrong"?
+
+Decomposition of onset-matched Kiritan notes (stable across 0–50 ms overlap
+margins): does the est pitch exist in a GT note that temporally overlaps the est
+note's own window?
+
+| onset-matched note | share | meaning |
+|---|---|---|
+| pitch RIGHT (COnP pass) | 37 % | — |
+| right pitch, **wrong slot** | ~15 % | est pitch IS a real GT pitch overlapping its window → position/attribution error, *fixable by fixing timing* (hypothesis A) |
+| **fabricated** | ~47 % | est pitch matches NO overlapping GT note → a pitch never sung there; repositioning cannot fix it |
+
+So of the ~63 % that fail pitch, only ~¼ are "right pitch, wrong position"; ~¾
+are **genuinely wrong values**. **Causal test of "wrong window ⇒ wrong pitch"
+(hypothesis B):** stratify pitch-accuracy by how many GT notes the est window
+overlaps — if wide windows caused it, narrow ones would be accurate. They are
+not: span=1 (isolated) 36 % vs span≥5 (dense) 24 % — a real but *secondary*
+effect. Even the cleanest isolated est note is only ~36 % pitch-correct. So the
+dominant cause is neither pure mis-position (A, ~15 %) nor purely the window
+feeding a bad mode (B, secondary): it is **swift-f0's per-frame estimate snapped
+to a semitone then mode-pooled producing a value that was never sung**, which
+happens even for narrow isolated notes. (Structure: est 13 361 vs GT 10 370
+notes, 1.29×; 53 % of est notes < 60 ms = the `~`-continuation fragmentation.)
+
 ### Control — GAME on the SAME Kiritan audio & GT (is the pitch even recoverable?)
 
 Yes. A dedicated note-transcription model on the identical clips (given onset):
