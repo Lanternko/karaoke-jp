@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Snakemake
+.snakemake/
+
+# Third-party clones + checkpoints (fetched by scripts/setup.sh)
+third_party/*
+!third_party/README.md
+!third_party/.gitkeep
+
+# Per-song inputs and outputs (copyrighted audio / lyrics / video stay local)
+songs/*
+!songs/.gitkeep
+outputs/
+overrides/*
+!overrides/.gitkeep
+
+# Media
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.mp4
+*.webm
+*.mkv
+*.mov
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,111 @@
+{
+  "canonical": "1.0",
+  "profiles": {
+    "1.0": {
+      "pitch_chain": {
+        "backend": "game_union",
+        "game_language": "ja",
+        "game_seg_threshold": "0.3",
+        "game_seed": 0,
+        "postfix_flags": [
+          "--extend-sustains",
+          "--keep-repeats"
+        ],
+        "use_melody_union": true
+      },
+      "timing": {
+        "source": "mms",
+        "line_end_repair": {
+          "tail_top_db": 26,
+          "next_guard": 0.25,
+          "tail_gap": 0.12
+        }
+      },
+      "display_grid": {
+        "quarters_per_page": 16.0,
+        "gap_units": 0.0625,
+        "phrase_gap_units": 1.25,
+        "lead_units": 0.5,
+        "phrase_split_gap": 0.8,
+        "min_note": 0.09,
+        "wiggle_mode": "off",
+        "mora_cleanup": true,
+        "breath_gap": 0.25,
+        "breath_units": 0.5,
+        "count_in_quarters": 4.0,
+        "flip_delay": 0.5,
+        "note_window_margin": 0.25,
+        "note_tail_allowance": 1.0
+      },
+      "skin": {
+        "type": "flat_bar",
+        "ligatures": true,
+        "ligature_style": "chain"
+      },
+      "render": {
+        "vocal_ratio": 0.4,
+        "lrc_block_size": 2
+      },
+      "hud": {
+        "mode": "songinfo",
+        "key_backend": "essentia",
+        "key_fallback": "peak_pcp -> melody"
+      },
+      "lyrics": {
+        "lrc_settings": "config/mid2bar_lyrics_v2_mincho_thin.json",
+        "miter_stroke": true,
+        "page_split": true
+      },
+      "techniques": {
+        "enabled": true
+      },
+      "per_song": {
+        "file": "overrides/<song>_render.json",
+        "keys": {
+          "bg_mask": "render_mp4.py --bg-mask 'x,y,w,h[@t0-t1][;...]' — hide lyrics burned into the source MV (output-frame coords): plain box = solid black all song (letterbox band); @t0-t1 = gaussian blur only while a mid-picture caption shows",
+          "lrc_breaks": "export_lrc.py --breaks-from — hand line breaks, each a whole lyric line with | at the cut (token boundaries only); hand-broken lines skip the automatic page split",
+          "key": "render_mp4.py --key (e.g. Bb, F#m) — hand-verified key replaces the HUD detector"
+        }
+      },
+      "formats": {
+        "horizontal": {
+          "consumes": [
+            "pitch_chain",
+            "timing",
+            "display_grid",
+            "skin",
+            "hud",
+            "render"
+          ]
+        },
+        "portrait": {
+          "consumes": [
+            "pitch_chain",
+            "timing",
+            "render.vocal_ratio"
+          ],
+          "grid": {
+            "quarters_per_row": 8.0,
+            "gap_units": 0.0625,
+            "phrase_gap_units": 0.75,
+            "phrase_split_gap": 0.8,
+            "min_note": 0.09,
+            "wiggle_mode": "off",
+            "breath_gap": 0.25,
+            "breath_units": 0.5,
+            "pause_gap": 1.0,
+            "pause_units": 1.5,
+            "squeeze_units": 2.0,
+            "note_window_margin": 0.25,
+            "note_tail_allowance": 1.0,
+            "lead_max": 8.0,
+            "linger": 4.0
+          },
+          "note_cleanup": {
+            "enabled": true
+          }
+        }
+      }
+    }
+  }
+}

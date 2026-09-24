@@ -1,0 +1,121 @@
+# third_party/
+
+External repos used by the pipeline. Cloned by setup, **not vendored** —
+gitignored to keep this repo small. Re-create with the commands below.
+
+## openvpi/SOME — singing voice → MIDI (M2)
+
+```bash
+cd third_party
+git clone --depth 1 https://github.com/openvpi/SOME.git
+
+# Pretrained checkpoint (~435 MB; folder is named '256_5spk' inside the zip
+# despite the file being '128_5spk' — upstream naming quirk).
+cd SOME && mkdir -p pretrained && cd pretrained
+wget https://github.com/openvpi/SOME/releases/download/v1.0.0-baseline/0119_continuous128_5spk.zip
+unzip 0119_continuous128_5spk.zip
+
+# RMVPE checkpoint for the default `karaoke-jp melody --backend rmvpe` path.
+wget https://github.com/yxlllc/RMVPE/releases/download/230917/rmvpe.zip
+rm -rf rmvpe rmvpe_unpack
+unzip -o rmvpe.zip -d rmvpe_unpack
+mkdir -p rmvpe
+find rmvpe_unpack -name model.pt -exec mv {} rmvpe/model.pt \;
+rm -rf rmvpe_unpack rmvpe.zip
+```
+
+Runtime venv (avoids fairseq + librosa<0.10 collision with main env):
+
+```bash
+python3 -m venv ~/venvs/karaoke-jp-melody
+~/venvs/karaoke-jp-melody/bin/pip install \
+  torch==2.11.0 torchaudio numpy<2 librosa<0.10.0 einops==0.6.1 \
+  praat-parselmouth==0.4.3 lightning>=2.0.0 mido click PyYAML scipy \
+  h5py matplotlib torchmetrics tqdm \
+  --index-url https://download.pytorch.org/whl/cu130 \
+  --extra-index-url https://pypi.org/simple
+```
+
+## york135/CTC_CE_for_AST — direct note transcription (M2 `--backend cectc`)
+
+Wang & Jang's TASLP 2023 CRNN+CTC+CE singing transcription model. Outputs
+onset/offset/pitch in one shot (no RMVPE → segmentation heuristic). Selected
+when `MELODY_BACKEND=cectc` or `karaoke-jp melody --backend cectc`.
+
+```bash
+cd third_party
+git clone --depth 1 https://github.com/york135/CTC_CE_for_AST.git
+
+# Pretrained MIR-ST500 checkpoint (3.9 MB) + tuned inference yaml.
+~/venvs/karaoke-jp-melody/bin/pip install gdown
+mkdir -p CTC_CE_for_AST/pretrained
+cd CTC_CE_for_AST/pretrained
+~/venvs/karaoke-jp-melody/bin/gdown --folder \
+  https://drive.google.com/drive/folders/1lxq-IF83cEXE8XsTFywNJhwtDSRXWqRx
+# Yields CTC_CE_for_AST/ctc_ce#3_98/{ctc_ce#3_98, inference_ce_ctc#3_98.yaml}
+```
+
+Reuses `~/venvs/karaoke-jp-melody/` (torch 2.11+cu130, librosa 0.9.2). The
+wrapper in `scripts/run_cectc_inference.py` bypasses the upstream Spleeter
+prerequisite by feeding our Demucs-separated `vocals.wav` + `instrumental.wav`
+directly into `get_all_feature(voc, acc)`.
+
+## keisuke-okb/MID2BAR-Player — JOYSOUND-style renderer (M4)
+
+```bash
+cd third_party
+git clone --depth 1 https://github.com/keisuke-okb/MID2BAR-Player.git
+```
+
+Render venv (Pygame + opencv + the rest of MID2BAR's runtime; mic/GUI deps
+are stubbed at call time by `scripts/render_mp4.py`, so we skip
+`customtkinter` and the system-level PortAudio that `sounddevice` would
+want):
+
+```bash
+python3 -m venv ~/venvs/karaoke-jp-render
+~/venvs/karaoke-jp-render/bin/pip install \
+  'pygame>2.6' Pillow numpy pandas py_midicsv mido \
+  opencv-python chardet tqdm click freetype-py essentia
+```
+
+Headless invocation: `SDL_VIDEODRIVER=dummy` (no X11/Wayland needed).
+
+## Lyrics venv (M3) — independent of third_party but worth pinning here
+
+`faster-whisper` (CTranslate2) needs CUDA 12 cuBLAS / cuDNN at runtime, even
+when other torch in the system is on CUDA 13:
+
+```bash
+python3 -m venv ~/venvs/karaoke-jp-lyrics
+~/venvs/karaoke-jp-lyrics/bin/pip install \
+  fugashi unidic-lite pyopenjtalk faster-whisper \
+  nvidia-cublas-cu12 nvidia-cudnn-cu12 \
+  numpy soundfile click
+
+# At call time, prepend these to LD_LIBRARY_PATH so ctranslate2 finds cuBLAS:
+export LD_LIBRARY_PATH="$HOME/venvs/karaoke-jp-lyrics/lib/python3.12/site-packages/nvidia/cublas/lib:$HOME/venvs/karaoke-jp-lyrics/lib/python3.12/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH"
+```
+
+## openvpi/GAME — note transcription (default pitch chain)
+
+```bash
+cd third_party
+git clone --depth 1 https://github.com/openvpi/GAME.git
+mkdir -p GAME/pretrained && cd GAME/pretrained
+wget https://github.com/openvpi/GAME/releases/download/v1.0.0/GAME-1.0-large.zip
+unzip GAME-1.0-large.zip && rm GAME-1.0-large.zip
+```
+
+GAME venv (`~/venvs/karaoke-jp-game`): torch 2.11 **cu129** wheel (RTX 50xx /
+sm_120 needs it) + GAME's `requirements.txt`. `scripts/game_infer_seeded.py`
+seeds GAME's diffusion segmenter so output is reproducible.
+
+## Aligner venv — MMS CTC forced alignment (lyrics timing)
+
+`~/venvs/karaoke-jp-align`: torch 2.11 cu129 + `transformers numpy<2 soundfile
+click mido`. The checkpoint
+[`NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn`](https://huggingface.co/NextFire/mms-300m-ForcedAligner-karaoke-ja-Latn)
+is downloaded from Hugging Face on first use.
+
+`scripts/setup.sh` performs every step in this file.
